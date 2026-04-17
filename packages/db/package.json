@@ -1,0 +1,15 @@
+{
+  "name": "@stride-os/db",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@stride-os/tsconfig": "workspace:*",
+    "typescript": "^5.7.3"
+  }
+}
