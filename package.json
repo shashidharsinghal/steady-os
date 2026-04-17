@@ -13,7 +13,9 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@stride-os/eslint-config": "workspace:*",
     "@types/node": "^22.10.7",
+    "eslint": "^9.17.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.3",
     "prettier": "^3.4.2",
@@ -22,9 +24,12 @@
     "typescript": "^5.7.3"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,mjs,jsx}": [
+    "*.{ts,tsx}": [
       "prettier --write",
       "eslint --fix --max-warnings=0"
+    ],
+    "*.{js,mjs,jsx}": [
+      "prettier --write"
     ],
     "*.{json,md,yaml,yml,css}": [
       "prettier --write"

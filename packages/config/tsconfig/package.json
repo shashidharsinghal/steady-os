@@ -1,0 +1,14 @@
+{
+  "name": "@stride-os/tsconfig",
+  "version": "0.0.1",
+  "exports": {
+    "./base.json": "./base.json",
+    "./nextjs.json": "./nextjs.json",
+    "./react.json": "./react.json"
+  },
+  "files": [
+    "base.json",
+    "nextjs.json",
+    "react.json"
+  ]
+}
