@@ -82,6 +82,129 @@ export type Database = {
         };
         Relationships: never[];
       };
+      employees: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          full_name: string;
+          phone: string;
+          email: string | null;
+          address: string | null;
+          date_of_birth: string | null;
+          joined_on: string;
+          left_on: string | null;
+          role: "manager" | "staff" | "cleaner";
+          position: string | null;
+          employment_type: "full_time" | "part_time";
+          reports_to: string | null;
+          current_outlet_id: string | null;
+          emergency_contact_name: string | null;
+          emergency_contact_phone: string | null;
+          aadhaar_last_4: string | null;
+          archived_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          full_name: string;
+          phone: string;
+          email?: string | null;
+          address?: string | null;
+          date_of_birth?: string | null;
+          joined_on: string;
+          left_on?: string | null;
+          role: "manager" | "staff" | "cleaner";
+          position?: string | null;
+          employment_type: "full_time" | "part_time";
+          reports_to?: string | null;
+          current_outlet_id?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          aadhaar_last_4?: string | null;
+          archived_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          full_name?: string;
+          phone?: string;
+          email?: string | null;
+          address?: string | null;
+          date_of_birth?: string | null;
+          joined_on?: string;
+          left_on?: string | null;
+          role?: "manager" | "staff" | "cleaner";
+          position?: string | null;
+          employment_type?: "full_time" | "part_time";
+          reports_to?: string | null;
+          current_outlet_id?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          aadhaar_last_4?: string | null;
+          archived_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+      employee_outlet_assignments: {
+        Row: {
+          employee_id: string;
+          outlet_id: string;
+          assigned_at: string;
+          assigned_by: string | null;
+        };
+        Insert: {
+          employee_id: string;
+          outlet_id: string;
+          assigned_at?: string;
+          assigned_by?: string | null;
+        };
+        Update: {
+          employee_id?: string;
+          outlet_id?: string;
+          assigned_at?: string;
+          assigned_by?: string | null;
+        };
+        Relationships: never[];
+      };
+      employee_salary_history: {
+        Row: {
+          id: string;
+          employee_id: string;
+          monthly_salary: number;
+          effective_from: string;
+          effective_to: string | null;
+          reason: "joining" | "hike" | "demotion" | "correction";
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          employee_id: string;
+          monthly_salary: number;
+          effective_from: string;
+          effective_to?: string | null;
+          reason: "joining" | "hike" | "demotion" | "correction";
+          created_at?: string;
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          employee_id?: string;
+          monthly_salary?: number;
+          effective_from?: string;
+          effective_to?: string | null;
+          reason?: "joining" | "hike" | "demotion" | "correction";
+          created_at?: string;
+          created_by?: string | null;
+        };
+        Relationships: never[];
+      };
       outlet_members: {
         Row: {
           outlet_id: string;
@@ -146,6 +269,9 @@ export type Database = {
     Enums: {
       role_type: "partner" | "manager";
       outlet_status: "active" | "setup" | "closed";
+      employee_role: "manager" | "staff" | "cleaner";
+      employment_type: "full_time" | "part_time";
+      salary_change_reason: "joining" | "hike" | "demotion" | "correction";
     };
     CompositeTypes: Record<string, never>;
   };
