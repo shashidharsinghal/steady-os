@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Button,
@@ -34,6 +35,7 @@ export function AssignToOutletDialog({
   assignedOutlets: OutletOption[];
   allOutlets: OutletOption[];
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selectedOutletId, setSelectedOutletId] = useState("");
   const [saving, setSaving] = useState(false);
@@ -52,6 +54,7 @@ export function AssignToOutletDialog({
       await assignEmployeeToOutlet({ employee_id: employeeId, outlet_id: selectedOutletId });
       toast.success(`${employeeName} was assigned to the outlet.`);
       setSelectedOutletId("");
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to assign employee.");
     } finally {
@@ -64,6 +67,7 @@ export function AssignToOutletDialog({
     try {
       await removeEmployeeFromOutlet({ employee_id: employeeId, outlet_id: outletId });
       toast.success(`${employeeName} was removed from the outlet.`);
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to remove assignment.");
     } finally {

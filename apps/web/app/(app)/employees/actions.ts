@@ -104,6 +104,11 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
   }
 
   const supabase = await createClient();
+  const { data: existingEmployee } = await supabase
+    .from("employees")
+    .select("current_outlet_id")
+    .eq("id", id)
+    .single();
   const employeePayload = toEmployeeUpdate(parsed.data);
 
   const { error } = await supabase.from("employees").update(employeePayload).eq("id", id);
@@ -124,6 +129,9 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
 
   revalidatePath("/employees");
   revalidatePath(`/employees/${id}`);
+  if (existingEmployee?.current_outlet_id) {
+    revalidatePath(`/outlets/${existingEmployee.current_outlet_id}`);
+  }
   if (employeePayload.current_outlet_id) {
     revalidatePath(`/outlets/${employeePayload.current_outlet_id}`);
   }

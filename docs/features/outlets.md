@@ -209,6 +209,14 @@ uploaded to the forthcoming Documents feature.
   only manual data; Documents integration should be additive, not a
   rewrite
 
+  ***
+
+## Related Features
+
+- **Outlet Photos** — see `docs/features/outlet-photos.md`. Adds image
+  gallery, cover photo, and upload flow to outlet detail and list pages.
+- **Documents** (planned) — see `docs/features/documents.md` when written.
+
 ## Definition of Done
 
 - Partner can create an outlet and sees it appear in the list immediately

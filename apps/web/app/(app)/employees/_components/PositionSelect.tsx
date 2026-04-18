@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   FormControl,
   FormItem,
@@ -22,7 +23,12 @@ export function PositionSelect({
   onChange: (value: string) => void;
 }) {
   const isPreset = EMPLOYEE_POSITIONS.includes(value as (typeof EMPLOYEE_POSITIONS)[number]);
-  const selectValue = value ? (isPreset ? value : "Other") : "";
+  const [isCustom, setIsCustom] = useState(Boolean(value) && !isPreset);
+  const selectValue = isCustom ? "Other" : value;
+
+  useEffect(() => {
+    setIsCustom(Boolean(value) && !isPreset);
+  }, [isPreset, value]);
 
   return (
     <FormItem>
@@ -31,10 +37,12 @@ export function PositionSelect({
         value={selectValue}
         onValueChange={(nextValue) => {
           if (nextValue === "Other") {
+            setIsCustom(true);
             onChange("");
             return;
           }
 
+          setIsCustom(false);
           onChange(nextValue);
         }}
       >
@@ -51,7 +59,7 @@ export function PositionSelect({
           ))}
         </SelectContent>
       </Select>
-      {!isPreset && (
+      {isCustom && (
         <div className="mt-3">
           <Input
             placeholder="Specify position"

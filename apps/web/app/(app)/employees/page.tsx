@@ -9,17 +9,25 @@ import { EmployeeListItem } from "./_components/EmployeeListItem";
 export default async function EmployeesPage() {
   const [supabase, role] = await Promise.all([createClient(), getRole()]);
 
-  const [{ data: employees }, { data: outlets }] = await Promise.all([
+  const [{ data: employees }, { data: outlets }, { data: assignments }] = await Promise.all([
     supabase.from("employees").select("*").order("created_at", { ascending: false }),
     supabase.from("outlets").select("id, name").is("archived_at", null),
+    supabase.from("employee_outlet_assignments").select("employee_id"),
   ]);
 
   const outletMap = new Map((outlets ?? []).map((outlet) => [outlet.id, outlet.name]));
   const allEmployees = (employees ?? []) as Employee[];
+  const assignedEmployeeIds = new Set(
+    (assignments ?? []).map((assignment) => assignment.employee_id)
+  );
   const activeEmployees = allEmployees.filter((employee) => !employee.archived_at);
   const archivedEmployees = allEmployees.filter((employee) => employee.archived_at);
-  const unassignedEmployees = activeEmployees.filter((employee) => !employee.current_outlet_id);
-  const assignedEmployees = activeEmployees.filter((employee) => employee.current_outlet_id);
+  const unassignedEmployees = activeEmployees.filter(
+    (employee) => !assignedEmployeeIds.has(employee.id) && !employee.current_outlet_id
+  );
+  const assignedEmployees = activeEmployees.filter(
+    (employee) => assignedEmployeeIds.has(employee.id) || Boolean(employee.current_outlet_id)
+  );
   const isPartner = role === "partner";
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Button,
@@ -33,6 +34,7 @@ export function RecordSalaryChangeDialog({
   employeeId: string;
   employeeName: string;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [monthlySalary, setMonthlySalary] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState("");
@@ -52,6 +54,7 @@ export function RecordSalaryChangeDialog({
       setMonthlySalary("");
       setEffectiveFrom("");
       setReason("hike");
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to record salary change.");
     } finally {
@@ -116,7 +119,10 @@ export function RecordSalaryChangeDialog({
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={saving}>
+          <Button
+            onClick={handleSubmit}
+            disabled={saving || !monthlySalary.trim() || !effectiveFrom}
+          >
             {saving ? "Saving…" : "Save change"}
           </Button>
         </DialogFooter>

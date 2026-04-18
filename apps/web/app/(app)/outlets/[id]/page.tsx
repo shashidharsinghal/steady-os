@@ -51,7 +51,7 @@ export default async function OutletDetailPage({ params }: { params: Promise<{ i
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="employees">Employees</TabsTrigger>
+          <TabsTrigger value="employees">Team</TabsTrigger>
           <TabsTrigger value="sales">Sales</TabsTrigger>
         </TabsList>
 

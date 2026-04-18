@@ -67,23 +67,80 @@ CREATE TABLE public.employee_salary_history (
 );
 
 CREATE INDEX employee_salary_history_employee_id_idx ON public.employee_salary_history (employee_id);
+CREATE UNIQUE INDEX employee_salary_history_open_row_idx
+  ON public.employee_salary_history (employee_id)
+  WHERE effective_to IS NULL;
 
--- Trigger: when a new salary row is inserted, close the previous open row
-CREATE OR REPLACE FUNCTION public.close_previous_salary()
+-- Trigger: when a new salary row is inserted, close the previous open row and
+-- prevent backdated overlapping records from corrupting the timeline.
+CREATE OR REPLACE FUNCTION public.prepare_employee_salary_history_insert()
 RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  previous_open_salary public.employee_salary_history%ROWTYPE;
 BEGIN
-  UPDATE public.employee_salary_history
-  SET effective_to = NEW.effective_from - INTERVAL '1 day'
+  SELECT *
+  INTO previous_open_salary
+  FROM public.employee_salary_history
   WHERE employee_id = NEW.employee_id
     AND effective_to IS NULL
-    AND id != NEW.id;
+  ORDER BY effective_from DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF previous_open_salary.id IS NOT NULL THEN
+    IF NEW.effective_from <= previous_open_salary.effective_from THEN
+      RAISE EXCEPTION
+        'Salary changes must be effective after the current open salary row'
+        USING ERRCODE = '23514';
+    END IF;
+
+    UPDATE public.employee_salary_history
+    SET effective_to = NEW.effective_from - 1
+    WHERE id = previous_open_salary.id;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER auto_close_salary
-  AFTER INSERT ON public.employee_salary_history
-  FOR EACH ROW EXECUTE PROCEDURE public.close_previous_salary();
+CREATE TRIGGER prepare_employee_salary_history_insert
+  BEFORE INSERT ON public.employee_salary_history
+  FOR EACH ROW EXECUTE PROCEDURE public.prepare_employee_salary_history_insert();
+
+-- Trigger: keep the primary outlet reflected in the multi-assignment table.
+CREATE OR REPLACE FUNCTION public.sync_employee_primary_outlet_assignment()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.current_outlet_id IS NOT NULL THEN
+    INSERT INTO public.employee_outlet_assignments (employee_id, outlet_id, assigned_by)
+    VALUES (NEW.id, NEW.current_outlet_id, auth.uid())
+    ON CONFLICT (employee_id, outlet_id) DO NOTHING;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER sync_employee_primary_outlet_assignment
+  AFTER INSERT OR UPDATE OF current_outlet_id ON public.employees
+  FOR EACH ROW EXECUTE PROCEDURE public.sync_employee_primary_outlet_assignment();
+
+-- Trigger: if a primary outlet assignment is removed, clear the primary outlet.
+CREATE OR REPLACE FUNCTION public.clear_removed_primary_outlet()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.employees
+  SET current_outlet_id = NULL
+  WHERE id = OLD.employee_id
+    AND current_outlet_id = OLD.outlet_id;
+
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER clear_removed_primary_outlet
+  AFTER DELETE ON public.employee_outlet_assignments
+  FOR EACH ROW EXECUTE PROCEDURE public.clear_removed_primary_outlet();
 
 -- Enable RLS
 ALTER TABLE public.employees                   ENABLE ROW LEVEL SECURITY;

@@ -39,9 +39,11 @@ const baseEmployeeSchema = z.object({
 });
 
 function validateEmployeeDates(
-  value: { joined_on?: string; left_on?: string },
+  value: { joined_on?: string; left_on?: string; date_of_birth?: string },
   ctx: z.RefinementCtx
 ): void {
+  const today = new Date().toISOString().slice(0, 10);
+
   if (!value.joined_on) {
     return;
   }
@@ -54,11 +56,27 @@ function validateEmployeeDates(
     });
   }
 
-  if (value.joined_on > new Date().toISOString().slice(0, 10)) {
+  if (value.joined_on > today) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["joined_on"],
       message: "Joining date cannot be in the future",
+    });
+  }
+
+  if (value.left_on && value.left_on > today) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["left_on"],
+      message: "Left date cannot be in the future",
+    });
+  }
+
+  if (value.date_of_birth && value.date_of_birth > today) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["date_of_birth"],
+      message: "Date of birth cannot be in the future",
     });
   }
 }
@@ -81,9 +99,19 @@ export const updateEmployeeSchema = baseEmployeeSchema
   })
   .superRefine(validateEmployeeDates);
 
-export const archiveEmployeeSchema = z.object({
-  left_on: z.string().min(1, "Exit date is required"),
-});
+export const archiveEmployeeSchema = z
+  .object({
+    left_on: z.string().min(1, "Exit date is required"),
+  })
+  .superRefine((value, ctx) => {
+    if (value.left_on > new Date().toISOString().slice(0, 10)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["left_on"],
+        message: "Exit date cannot be in the future",
+      });
+    }
+  });
 
 export const recordSalaryChangeSchema = z.object({
   monthly_salary: z.coerce.number().nonnegative("Salary must be 0 or greater"),
