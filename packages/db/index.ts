@@ -80,7 +80,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
-        Relationships: [];
+        Relationships: never[];
       };
       outlet_members: {
         Row: {
@@ -119,19 +119,29 @@ export type Database = {
     };
     Views: {
       active_outlets: {
-        Row: Database["public"]["Tables"]["outlets"]["Row"];
+        Row: {
+          id: string;
+          name: string;
+          brand: string;
+          address: string | null;
+          phone: string | null;
+          petpooja_restaurant_id: string | null;
+          status: "active" | "setup" | "closed";
+          gst_number: string | null;
+          fssai_license: string | null;
+          opened_at: string | null;
+          archived_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Relationships: never[];
       };
     };
     Functions: {
-      is_partner:
-        | {
-            Args: Record<string, never>;
-            Returns: boolean;
-          }
-        | {
-            Args: { user_id: string };
-            Returns: boolean;
-          };
+      is_partner: {
+        Args: { user_id: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       role_type: "partner" | "manager";
