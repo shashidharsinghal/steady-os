@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import { Slot } from "@radix-ui/react-slot";
+import { AlertCircle } from "lucide-react";
 import {
   Controller,
   FormProvider,
@@ -71,7 +72,7 @@ const FormItem = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
 
     return (
       <FormItemContext.Provider value={{ id }}>
-        <div ref={ref} className={cn("space-y-2", className)} {...props} />
+        <div ref={ref} className={cn("space-y-2.5", className)} {...props} />
       </FormItemContext.Provider>
     );
   }
@@ -87,7 +88,7 @@ const FormLabel = React.forwardRef<
   return (
     <Label
       ref={ref}
-      className={cn(error && "text-destructive", className)}
+      className={cn("text-sm font-medium", error && "text-destructive", className)}
       htmlFor={formItemId}
       {...props}
     />
@@ -123,7 +124,7 @@ const FormDescription = React.forwardRef<
     <p
       ref={ref}
       id={formDescriptionId}
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-muted-foreground text-xs leading-5", className)}
       {...props}
     />
   );
@@ -145,10 +146,14 @@ const FormMessage = React.forwardRef<
     <p
       ref={ref}
       id={formMessageId}
-      className={cn("text-destructive text-sm font-medium", className)}
+      className={cn(
+        "text-destructive inline-flex items-center gap-1.5 text-xs font-medium",
+        className
+      )}
       {...props}
     >
-      {body}
+      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+      <span>{body}</span>
     </p>
   );
 });

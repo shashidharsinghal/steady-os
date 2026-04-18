@@ -15,3 +15,14 @@ export interface Outlet {
   created_at: string;
   updated_at: string;
 }
+
+export interface OutletPhoto {
+  id: string;
+  outlet_id: string;
+  storage_path: string;
+  caption: string | null;
+  is_cover: boolean;
+  sort_order: number;
+  uploaded_by: string | null;
+  uploaded_at: string;
+}

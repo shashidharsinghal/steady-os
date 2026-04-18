@@ -1,10 +1,24 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
-import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "@stride-os/ui";
+import { Plus, Search } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@stride-os/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
 import type { Employee } from "@stride-os/shared";
-import { EmployeeListItem } from "./_components/EmployeeListItem";
+import { EmployeeRoleBadge } from "./_components/EmployeeRoleBadge";
 
 export default async function EmployeesPage() {
   const [supabase, role] = await Promise.all([createClient(), getRole()]);
@@ -25,16 +39,13 @@ export default async function EmployeesPage() {
   const unassignedEmployees = activeEmployees.filter(
     (employee) => !assignedEmployeeIds.has(employee.id) && !employee.current_outlet_id
   );
-  const assignedEmployees = activeEmployees.filter(
-    (employee) => assignedEmployeeIds.has(employee.id) || Boolean(employee.current_outlet_id)
-  );
   const isPartner = role === "partner";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold">Employees</h1>
+          <h1 className="text-2xl font-semibold">Employees</h1>
           <p className="text-muted-foreground text-sm">
             Track team members, outlets, and payroll history.
           </p>
@@ -50,14 +61,31 @@ export default async function EmployeesPage() {
       </div>
 
       <Tabs defaultValue="active">
-        <TabsList>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="archived">Archived</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <TabsList>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="archived">Archived</TabsTrigger>
+          </TabsList>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-muted-foreground border-border/80 bg-background/80 flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm">
+              <Search className="h-4 w-4" />
+              <span className="flex-1">Search employees</span>
+              <span className="border-border/80 bg-muted/60 rounded-md border px-1.5 py-0.5 text-[11px] uppercase tracking-[0.16em]">
+                Cmd K
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Chip label="All roles" />
+              <Chip label="Assigned" />
+              <Chip label="Unassigned" />
+            </div>
+          </div>
+        </div>
 
         <TabsContent value="active" className="mt-4 space-y-6">
           {activeEmployees.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
+            <div className="flex flex-col items-center justify-center rounded-[20px] border border-dashed py-16 text-center">
               {isPartner ? (
                 <>
                   <p className="text-muted-foreground mb-4">No employees yet.</p>
@@ -72,51 +100,65 @@ export default async function EmployeesPage() {
               )}
             </div>
           ) : (
-            <>
-              {assignedEmployees.length > 0 && (
-                <section className="space-y-3">
-                  <div>
-                    <h2 className="font-semibold">Assigned employees</h2>
-                    <p className="text-muted-foreground text-sm">
-                      Employees with a primary outlet assigned.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {assignedEmployees.map((employee) => (
-                      <EmployeeListItem
-                        key={employee.id}
-                        employee={employee}
-                        primaryOutletName={
-                          employee.current_outlet_id
-                            ? outletMap.get(employee.current_outlet_id)
-                            : null
-                        }
-                      />
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Position</TableHead>
+                      <TableHead>Outlet</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Joined</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeEmployees.map((employee) => (
+                      <TableRow key={employee.id}>
+                        <TableCell>
+                          <Link
+                            href={`/employees/${employee.id}`}
+                            className="flex items-center gap-3"
+                          >
+                            <div className="bg-primary/12 text-primary border-primary/15 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold">
+                              {employee.full_name.slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="font-medium">{employee.full_name}</p>
+                              <p className="text-muted-foreground text-sm">
+                                {employee.employment_type === "full_time"
+                                  ? "Full-time"
+                                  : "Part-time"}
+                              </p>
+                            </div>
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <EmployeeRoleBadge role={employee.role} />
+                        </TableCell>
+                        <TableCell>{employee.position ?? "—"}</TableCell>
+                        <TableCell>
+                          {employee.current_outlet_id
+                            ? (outletMap.get(employee.current_outlet_id) ?? "—")
+                            : "Unassigned"}
+                        </TableCell>
+                        <TableCell>{employee.phone}</TableCell>
+                        <TableCell>{employee.joined_on}</TableCell>
+                        <TableCell>
+                          <span className="text-muted-foreground text-sm">
+                            {unassignedEmployees.some((item) => item.id === employee.id)
+                              ? "Unassigned"
+                              : "Assigned"}
+                          </span>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </div>
-                </section>
-              )}
-
-              {unassignedEmployees.length > 0 && (
-                <section className="space-y-3">
-                  <div>
-                    <h2 className="font-semibold">Unassigned</h2>
-                    <p className="text-muted-foreground text-sm">
-                      Employees who don&apos;t yet have a primary outlet.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {unassignedEmployees.map((employee) => (
-                      <EmployeeListItem
-                        key={employee.id}
-                        employee={employee}
-                        primaryOutletName={null}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-            </>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
@@ -124,20 +166,56 @@ export default async function EmployeesPage() {
           {archivedEmployees.length === 0 ? (
             <p className="text-muted-foreground text-sm">No archived employees yet.</p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {archivedEmployees.map((employee) => (
-                <EmployeeListItem
-                  key={employee.id}
-                  employee={employee}
-                  primaryOutletName={
-                    employee.current_outlet_id ? outletMap.get(employee.current_outlet_id) : null
-                  }
-                />
-              ))}
-            </div>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Outlet</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Left on</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedEmployees.map((employee) => (
+                      <TableRow key={employee.id}>
+                        <TableCell>
+                          <Link href={`/employees/${employee.id}`} className="font-medium">
+                            {employee.full_name}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <EmployeeRoleBadge role={employee.role} />
+                        </TableCell>
+                        <TableCell>
+                          {employee.current_outlet_id
+                            ? (outletMap.get(employee.current_outlet_id) ?? "—")
+                            : "Unassigned"}
+                        </TableCell>
+                        <TableCell>{employee.phone}</TableCell>
+                        <TableCell>{employee.left_on ?? "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function Chip({ label }: { label: string }) {
+  return (
+    <button
+      type="button"
+      className="text-muted-foreground hover:border-primary/25 hover:text-foreground border-border/70 bg-background/80 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+    >
+      {label}
+    </button>
   );
 }

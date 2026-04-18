@@ -3,8 +3,9 @@ import { Plus } from "lucide-react";
 import { Button } from "@stride-os/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
+import type { Outlet, OutletPhoto } from "@stride-os/shared";
+import { getSignedOutletPhotoUrls } from "./photo-utils";
 import { OutletListItem } from "./_components/OutletListItem";
-import type { Outlet } from "@stride-os/shared";
 
 export default async function OutletsPage() {
   const [supabase, role] = await Promise.all([createClient(), getRole()]);
@@ -15,13 +16,32 @@ export default async function OutletsPage() {
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
+  const outletIds = (outlets ?? []).map((outlet) => outlet.id);
+  const { data: coverPhotos } =
+    outletIds.length > 0
+      ? await supabase
+          .from("outlet_photos")
+          .select("*")
+          .in("outlet_id", outletIds)
+          .eq("is_cover", true)
+      : { data: [] as OutletPhoto[] };
+  const signedCoverPhotos = await getSignedOutletPhotoUrls((coverPhotos ?? []) as OutletPhoto[]);
+  const coverPhotoMap = new Map(
+    signedCoverPhotos.map((photo) => [photo.outlet_id, photo.signed_url])
+  );
+
   const isEmpty = !outlets || outlets.length === 0;
   const isPartner = role === "partner";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Outlets</h1>
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Outlets</h1>
+          <p className="text-muted-foreground text-sm">
+            Portfolio view with cover photos, contact details, and live status.
+          </p>
+        </div>
         {isPartner && (
           <Button asChild size="sm">
             <Link href="/outlets/new">
@@ -48,9 +68,13 @@ export default async function OutletsPage() {
           )}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {(outlets as Outlet[]).map((outlet) => (
-            <OutletListItem key={outlet.id} outlet={outlet} />
+            <OutletListItem
+              key={outlet.id}
+              outlet={outlet}
+              coverUrl={coverPhotoMap.get(outlet.id)}
+            />
           ))}
         </div>
       )}

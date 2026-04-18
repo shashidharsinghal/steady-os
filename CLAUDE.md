@@ -115,6 +115,28 @@ Spec: `docs/features/employees.md`
   `packages/shared/src/types/employee.ts`, and `packages/shared/src/constants/positions.ts`
 - Migration: `20240101000002_employees.sql`
 
+### Outlet Photos
+
+Spec: `docs/features/outlet-photos.md`
+
+- Outlets support up to 5 private photos stored in the `outlet-photos` Supabase bucket
+- Partners can upload, delete, reorder, and set a cover photo; managers can view photos through outlet access
+- Signed URLs are generated server-side for both the outlet detail gallery and the outlet list cover image
+- Server actions live in `apps/web/app/(app)/outlets/[id]/actions.ts`
+- UI components live under `apps/web/app/(app)/outlets/[id]/_components/` and `apps/web/app/(app)/outlets/_components/`
+- Shared contracts live in `packages/shared/src/types/outlet.ts` and `packages/shared/src/zod/outlet-photos.ts`
+- Migration: `20240101000003_outlet_photos.sql`
+
+### Design System
+
+Spec: `docs/features/design-system.md`
+
+- Global tokens now use a warm saffron-led palette with matching light and dark theme variables in `apps/web/app/globals.css`
+- App shell now includes a richer sidebar, top bar, theme toggle, and improved account/sign-out surface
+- Shared primitives in `packages/ui` have been refreshed: buttons, cards, badges, tabs, forms, tables, inputs, selects, and textareas
+- Outlet pages are photo-led and more editorial; employees now use a denser roster table layout
+- Login and dashboard now follow the refreshed visual language instead of scaffold defaults
+
 ## What NOT to Build Yet
 
 - Mobile app (Phase 3)

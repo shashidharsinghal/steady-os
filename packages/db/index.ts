@@ -239,6 +239,52 @@ export type Database = {
           },
         ];
       };
+      outlet_photos: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          storage_path: string;
+          caption: string | null;
+          is_cover: boolean;
+          sort_order: number;
+          uploaded_by: string | null;
+          uploaded_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          storage_path: string;
+          caption?: string | null;
+          is_cover?: boolean;
+          sort_order: number;
+          uploaded_by?: string | null;
+          uploaded_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          storage_path?: string;
+          caption?: string | null;
+          is_cover?: boolean;
+          sort_order?: number;
+          uploaded_by?: string | null;
+          uploaded_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "outlet_photos_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "outlet_photos_uploaded_by_fkey";
+            columns: ["uploaded_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       active_outlets: {

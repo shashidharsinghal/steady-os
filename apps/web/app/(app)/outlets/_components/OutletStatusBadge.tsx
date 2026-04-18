@@ -14,9 +14,9 @@ const labelMap: Record<OutletStatus, string> = {
 };
 
 const colorMap: Record<OutletStatus, string> = {
-  active: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  setup: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  closed: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+  active: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  setup: "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  closed: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
 };
 
 export function OutletStatusBadge({ status }: { status: OutletStatus }) {
