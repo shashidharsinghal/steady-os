@@ -44,6 +44,9 @@ importers:
       '@stride-os/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@stride-os/ingestion':
+        specifier: workspace:*
+        version: link:../../packages/ingestion
       '@stride-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared

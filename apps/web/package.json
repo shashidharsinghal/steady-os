@@ -13,6 +13,7 @@
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@stride-os/db": "workspace:*",
+    "@stride-os/ingestion": "workspace:*",
     "@stride-os/shared": "workspace:*",
     "@stride-os/ui": "workspace:*",
     "@supabase/ssr": "^0.9.0",

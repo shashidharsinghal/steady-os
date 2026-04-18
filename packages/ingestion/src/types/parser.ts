@@ -24,8 +24,10 @@ export interface RowError {
 export interface ParseContext {
   runId: string;
   outletId: string | null;
-  /** Supabase Storage path of the uploaded file. */
+  /** Supabase Storage path of the uploaded file (for reference/logging). */
   filePath: string;
+  /** Full file content — parsers receive this to avoid needing Storage access. */
+  fileBuffer: Buffer;
   recordError: (err: RowError) => void;
 }
 
