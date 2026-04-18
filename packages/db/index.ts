@@ -43,6 +43,10 @@ export type Database = {
           phone: string | null;
           petpooja_restaurant_id: string | null;
           status: "active" | "setup" | "closed";
+          gst_number: string | null;
+          fssai_license: string | null;
+          opened_at: string | null;
+          archived_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -54,6 +58,10 @@ export type Database = {
           phone?: string | null;
           petpooja_restaurant_id?: string | null;
           status?: "active" | "setup" | "closed";
+          gst_number?: string | null;
+          fssai_license?: string | null;
+          opened_at?: string | null;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -65,6 +73,10 @@ export type Database = {
           phone?: string | null;
           petpooja_restaurant_id?: string | null;
           status?: "active" | "setup" | "closed";
+          gst_number?: string | null;
+          fssai_license?: string | null;
+          opened_at?: string | null;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -105,12 +117,21 @@ export type Database = {
         ];
       };
     };
-    Views: Record<string, never>;
-    Functions: {
-      is_partner: {
-        Args: Record<string, never>;
-        Returns: boolean;
+    Views: {
+      active_outlets: {
+        Row: Database["public"]["Tables"]["outlets"]["Row"];
       };
+    };
+    Functions: {
+      is_partner:
+        | {
+            Args: Record<string, never>;
+            Returns: boolean;
+          }
+        | {
+            Args: { user_id: string };
+            Returns: boolean;
+          };
     };
     Enums: {
       role_type: "partner" | "manager";
