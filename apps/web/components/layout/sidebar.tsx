@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Store, Upload } from "lucide-react";
+import { LayoutDashboard, Store, Upload, Users } from "lucide-react";
 import { cn } from "@stride-os/ui/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/outlets", label: "Outlets", icon: Store },
+  { href: "/employees", label: "Employees", icon: Users },
   { href: "/ingest", label: "Ingest", icon: Upload },
 ] as const;
 

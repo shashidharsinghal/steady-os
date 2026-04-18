@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
 import { OutletStatusBadge } from "../_components/OutletStatusBadge";
 import { ArchiveOutletButton } from "../_components/ArchiveOutletButton";
+import { OutletTeamTab } from "./_components/OutletTeamTab";
 import type { Outlet } from "@stride-os/shared";
 
 export default async function OutletDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -66,7 +67,7 @@ export default async function OutletDetailPage({ params }: { params: Promise<{ i
         </TabsContent>
 
         <TabsContent value="employees" className="mt-4">
-          <p className="text-muted-foreground text-sm">Coming soon.</p>
+          <OutletTeamTab outletId={outlet.id} />
         </TabsContent>
 
         <TabsContent value="sales" className="mt-4">

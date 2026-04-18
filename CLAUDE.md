@@ -101,6 +101,20 @@ Spec: `docs/features/outlets.md`
 - Future: `gst_number`, `fssai_license`, `opened_at` will be auto-populated by the Documents
   feature. Plan to add a `source` enum column ('manual' | 'extracted') per field at that point.
 
+### Employees (`/employees`)
+
+Spec: `docs/features/employees.md`
+
+- Partners can create, edit, archive, and review employees across outlets
+- Employee records support multi-outlet assignment, a primary outlet, reporting lines, and emergency contact info
+- Salary history is append-only in `employee_salary_history`; initial salary is created on employee creation and later changes are recorded separately
+- Server actions: `apps/web/app/(app)/employees/actions.ts`
+- Routes: `/employees`, `/employees/new`, `/employees/[id]`, `/employees/[id]/edit`
+- Outlet detail page Team tab now renders live roster data from Employees
+- Shared validation/types/constants live in `packages/shared/src/zod/employees.ts`,
+  `packages/shared/src/types/employee.ts`, and `packages/shared/src/constants/positions.ts`
+- Migration: `20240101000002_employees.sql`
+
 ## What NOT to Build Yet
 
 - Mobile app (Phase 3)

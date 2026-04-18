@@ -24,7 +24,11 @@ CREATE TABLE public.employees (
   aadhaar_last_4           char(4),
   archived_at              timestamptz,
   created_at               timestamptz   NOT NULL DEFAULT now(),
-  updated_at               timestamptz   NOT NULL DEFAULT now()
+  updated_at               timestamptz   NOT NULL DEFAULT now(),
+  CONSTRAINT employees_aadhaar_last_4_format
+    CHECK (aadhaar_last_4 IS NULL OR aadhaar_last_4 ~ '^[0-9]{4}$'),
+  CONSTRAINT employees_left_on_after_joined_on
+    CHECK (left_on IS NULL OR left_on >= joined_on)
 );
 
 CREATE INDEX employees_current_outlet_id_idx ON public.employees (current_outlet_id);
@@ -43,6 +47,9 @@ CREATE TABLE public.employee_outlet_assignments (
   PRIMARY KEY (employee_id, outlet_id)
 );
 
+CREATE INDEX employee_outlet_assignments_outlet_id_idx
+  ON public.employee_outlet_assignments (outlet_id);
+
 -- employee_salary_history  (append-only)
 CREATE TABLE public.employee_salary_history (
   id              uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -52,7 +59,11 @@ CREATE TABLE public.employee_salary_history (
   effective_to    date,
   reason          public.salary_change_reason NOT NULL,
   created_at      timestamptz   NOT NULL DEFAULT now(),
-  created_by      uuid          REFERENCES auth.users(id) ON DELETE SET NULL
+  created_by      uuid          REFERENCES auth.users(id) ON DELETE SET NULL,
+  CONSTRAINT employee_salary_history_amount_non_negative
+    CHECK (monthly_salary >= 0),
+  CONSTRAINT employee_salary_history_effective_range
+    CHECK (effective_to IS NULL OR effective_to >= effective_from)
 );
 
 CREATE INDEX employee_salary_history_employee_id_idx ON public.employee_salary_history (employee_id);
@@ -103,7 +114,8 @@ CREATE POLICY "employees_insert"
 
 CREATE POLICY "employees_update"
   ON public.employees FOR UPDATE
-  USING (public.is_partner(auth.uid()));
+  USING (public.is_partner(auth.uid()))
+  WITH CHECK (public.is_partner(auth.uid()));
 
 -- employee_outlet_assignments RLS
 CREATE POLICY "eoa_select"
