@@ -127,6 +127,22 @@ Spec: `docs/features/outlet-photos.md`
 - Shared contracts live in `packages/shared/src/types/outlet.ts` and `packages/shared/src/zod/outlet-photos.ts`
 - Migration: `20240101000003_outlet_photos.sql`
 
+### Ingestion Framework (`/ingest`)
+
+Spec: `docs/features/ingestion-framework.md`
+Analysis: `docs/features/ingestion-analysis.md`
+
+- Framework package `packages/ingestion/` — domain-agnostic; feature parsers register without touching core
+- `ingestion_runs` table: every upload is an audited run through a strict state machine (`uploaded → parsing → preview_ready → committing → committed`; can branch to `failed` or `rolled_back`)
+- `ingestion_row_errors` table: per-row parse errors linked to a run (cascade-deleted on run delete)
+- Storage bucket `ingestion-uploads` (private; signed URLs only)
+- `file_sha256` dedup guard: uploading the same committed file twice is rejected at DB level
+- Parser plugin pattern: implement `Parser<TRaw, TCanonical>`, call `registerParser()` once — no framework changes needed
+- Types/registry/errors exported from `packages/ingestion/src/`
+- Migration: `20240101000004_ingestion.sql`
+- Phase 2 (next): upload UI at `/ingest`, server actions for the full lifecycle
+- Phase 3 (after): error surfaces, preview routing, loading/error states
+
 ### Design System
 
 Spec: `docs/features/design-system.md`
@@ -136,6 +152,21 @@ Spec: `docs/features/design-system.md`
 - Shared primitives in `packages/ui` have been refreshed: buttons, cards, badges, tabs, forms, tables, inputs, selects, and textareas
 - Outlet pages are photo-led and more editorial; employees now use a denser roster table layout
 - Login and dashboard now follow the refreshed visual language instead of scaffold defaults
+
+## Data Domains & Ingestion
+
+Stride OS ingests data from many external sources via the shared **ingestion framework** (`packages/ingestion/`). See `docs/features/ingestion-framework.md` for architecture.
+
+Each data domain has its own parsers, canonical tables, and feature package:
+
+- **Sales** (`packages/sales-ingestion/`, tables `sales_orders`, `customers`, `payment_transactions`, `aggregator_payouts`) — in progress
+- **P&L** (future, tables `financial_periods`, `pnl_line_items`)
+- **Expenses** (future, tables `vendor_invoices`, `expense_lines`)
+- **Documents** (future, structured extractions from uploaded PDFs)
+
+Every canonical row has an `ingestion_run_id` FK back to `ingestion_runs`. Rollback is a single delete by run_id.
+
+Sensitive fields (customer phones): hashed only, never plaintext.
 
 ## What NOT to Build Yet
 

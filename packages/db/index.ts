@@ -239,6 +239,187 @@ export type Database = {
           },
         ];
       };
+      ingestion_runs: {
+        Row: {
+          id: string;
+          outlet_id: string | null;
+          uploaded_by: string;
+          uploaded_at: string;
+          source_type: string;
+          detection_method:
+            | "filename_pattern"
+            | "header_inspection"
+            | "content_llm"
+            | "user_override";
+          detection_confidence: number | null;
+          user_confirmed_source: boolean;
+          file_name: string;
+          file_size_bytes: number;
+          file_mime_type: string | null;
+          file_storage_path: string;
+          file_sha256: string;
+          status:
+            | "uploaded"
+            | "parsing"
+            | "preview_ready"
+            | "committing"
+            | "committed"
+            | "rolled_back"
+            | "failed";
+          parsing_started_at: string | null;
+          parsing_completed_at: string | null;
+          committing_started_at: string | null;
+          committed_at: string | null;
+          rolled_back_at: string | null;
+          failed_at: string | null;
+          rows_seen: number | null;
+          rows_parsed: number | null;
+          rows_to_insert: number | null;
+          rows_duplicate: number | null;
+          rows_errored: number | null;
+          preview_payload: Json | null;
+          error_details: Json | null;
+          committed_by: string | null;
+          rolled_back_by: string | null;
+          rollback_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id?: string | null;
+          uploaded_by: string;
+          uploaded_at?: string;
+          source_type: string;
+          detection_method:
+            | "filename_pattern"
+            | "header_inspection"
+            | "content_llm"
+            | "user_override";
+          detection_confidence?: number | null;
+          user_confirmed_source?: boolean;
+          file_name: string;
+          file_size_bytes: number;
+          file_mime_type?: string | null;
+          file_storage_path: string;
+          file_sha256: string;
+          status?:
+            | "uploaded"
+            | "parsing"
+            | "preview_ready"
+            | "committing"
+            | "committed"
+            | "rolled_back"
+            | "failed";
+          parsing_started_at?: string | null;
+          parsing_completed_at?: string | null;
+          committing_started_at?: string | null;
+          committed_at?: string | null;
+          rolled_back_at?: string | null;
+          failed_at?: string | null;
+          rows_seen?: number | null;
+          rows_parsed?: number | null;
+          rows_to_insert?: number | null;
+          rows_duplicate?: number | null;
+          rows_errored?: number | null;
+          preview_payload?: Json | null;
+          error_details?: Json | null;
+          committed_by?: string | null;
+          rolled_back_by?: string | null;
+          rollback_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string | null;
+          uploaded_by?: string;
+          uploaded_at?: string;
+          source_type?: string;
+          detection_method?:
+            | "filename_pattern"
+            | "header_inspection"
+            | "content_llm"
+            | "user_override";
+          detection_confidence?: number | null;
+          user_confirmed_source?: boolean;
+          file_name?: string;
+          file_size_bytes?: number;
+          file_mime_type?: string | null;
+          file_storage_path?: string;
+          file_sha256?: string;
+          status?:
+            | "uploaded"
+            | "parsing"
+            | "preview_ready"
+            | "committing"
+            | "committed"
+            | "rolled_back"
+            | "failed";
+          parsing_started_at?: string | null;
+          parsing_completed_at?: string | null;
+          committing_started_at?: string | null;
+          committed_at?: string | null;
+          rolled_back_at?: string | null;
+          failed_at?: string | null;
+          rows_seen?: number | null;
+          rows_parsed?: number | null;
+          rows_to_insert?: number | null;
+          rows_duplicate?: number | null;
+          rows_errored?: number | null;
+          preview_payload?: Json | null;
+          error_details?: Json | null;
+          committed_by?: string | null;
+          rolled_back_by?: string | null;
+          rollback_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: never[];
+      };
+      ingestion_row_errors: {
+        Row: {
+          id: string;
+          run_id: string;
+          row_number: number;
+          error_code: string;
+          error_message: string;
+          field_name: string | null;
+          raw_value: string | null;
+          raw_row: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id: string;
+          row_number: number;
+          error_code: string;
+          error_message: string;
+          field_name?: string | null;
+          raw_value?: string | null;
+          raw_row?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          run_id?: string;
+          row_number?: number;
+          error_code?: string;
+          error_message?: string;
+          field_name?: string | null;
+          raw_value?: string | null;
+          raw_row?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_row_errors_run_id_fkey";
+            columns: ["run_id"];
+            referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       outlet_photos: {
         Row: {
           id: string;
@@ -318,6 +499,15 @@ export type Database = {
       employee_role: "manager" | "staff" | "cleaner";
       employment_type: "full_time" | "part_time";
       salary_change_reason: "joining" | "hike" | "demotion" | "correction";
+      ingestion_status:
+        | "uploaded"
+        | "parsing"
+        | "preview_ready"
+        | "committing"
+        | "committed"
+        | "rolled_back"
+        | "failed";
+      detection_method: "filename_pattern" | "header_inspection" | "content_llm" | "user_override";
     };
     CompositeTypes: Record<string, never>;
   };
