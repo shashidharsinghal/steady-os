@@ -107,3 +107,16 @@ Spec: `docs/features/outlets.md`
 - Customer-facing anything (this is internal-only)
 - WhatsApp marketing blasts (Phase 2+, after compliance review)
 - Real-time collaboration features
+
+## Patterns Established
+
+Features should follow these conventions established by the Outlets feature:
+
+- **Route structure:** `apps/web/app/(app)/<feature>/` with `page.tsx`, `new/`, `[id]/`, `[id]/edit/`, `_components/`
+- **Server actions:** `actions.ts` at the feature root; all mutations call `requirePartner()` first
+- **Auth helpers:** from `apps/web/lib/auth.ts` — `getCurrentUser`, `requirePartner`, `isPartner`
+- **Validation:** zod schemas in `packages/shared/src/zod/`, inferred types in `packages/shared/src/types/`
+- **RLS:** defense-in-depth — UI gates, server actions check role, database enforces via RLS using `is_partner()` SQL helper
+- **Forms:** shared create/edit client component using react-hook-form + zodResolver
+- **Archive, don't delete:** soft-delete pattern via `archived_at timestamptz`
+- **States:** every route has `loading.tsx` and `error.tsx`
