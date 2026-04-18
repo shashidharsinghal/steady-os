@@ -98,6 +98,8 @@ Spec: `docs/features/outlets.md`
 - Migrations: `20240101000000_create_schema.sql`, `20240101000001_outlets_fields.sql`
 - Known quirk: `@supabase/ssr` must be ≥ 0.9.0; older versions mismap `SupabaseClient` type
   params causing insert/update to resolve as `never`
+- Future: `gst_number`, `fssai_license`, `opened_at` will be auto-populated by the Documents
+  feature. Plan to add a `source` enum column ('manual' | 'extracted') per field at that point.
 
 ## What NOT to Build Yet
 
