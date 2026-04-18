@@ -1,5 +1,5 @@
--- Enable extensions
-create extension if not exists "uuid-ossp";
+-- uuid-ossp not needed on PG14+ (gen_random_uuid is built-in)
+create extension if not exists "uuid-ossp" with schema extensions;
 
 -- Enums
 create type public.role_type as enum ('partner', 'manager');
@@ -16,7 +16,7 @@ create table public.profiles (
 
 -- outlets
 create table public.outlets (
-  id                       uuid           primary key default uuid_generate_v4(),
+  id                       uuid           primary key default gen_random_uuid(),
   name                     text           not null,
   brand                    text           not null,
   address                  text,
