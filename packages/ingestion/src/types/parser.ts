@@ -21,6 +21,43 @@ export interface RowError {
   rawRow?: unknown;
 }
 
+export interface ParserSupabaseError {
+  code?: string;
+  message: string;
+}
+
+export interface ParserSupabaseResult {
+  data: unknown;
+  error: ParserSupabaseError | null;
+}
+
+export interface ParserSupabaseFilterBuilder extends PromiseLike<ParserSupabaseResult> {
+  eq: (column: string, value: unknown) => ParserSupabaseFilterBuilder;
+  neq: (column: string, value: unknown) => ParserSupabaseFilterBuilder;
+  in: (column: string, values: readonly unknown[]) => ParserSupabaseFilterBuilder;
+  gte: (column: string, value: unknown) => ParserSupabaseFilterBuilder;
+  lte: (column: string, value: unknown) => ParserSupabaseFilterBuilder;
+  order: (column: string, options?: { ascending?: boolean }) => ParserSupabaseFilterBuilder;
+  select: (columns?: string) => ParserSupabaseFilterBuilder;
+  single: () => ParserSupabaseFilterBuilder;
+}
+
+export interface ParserSupabaseTableBuilder {
+  select: (columns?: string) => ParserSupabaseFilterBuilder;
+  insert: (values: unknown | unknown[]) => ParserSupabaseFilterBuilder;
+  upsert: (
+    values: unknown | unknown[],
+    options?: { onConflict?: string; ignoreDuplicates?: boolean }
+  ) => ParserSupabaseFilterBuilder;
+  update: (values: Record<string, unknown>) => ParserSupabaseFilterBuilder;
+  delete: () => ParserSupabaseFilterBuilder;
+}
+
+export interface ParserSupabaseClient {
+  from: (table: string) => ParserSupabaseTableBuilder;
+  rpc: (fn: string, args?: Record<string, unknown>) => Promise<ParserSupabaseResult>;
+}
+
 export interface ParseContext {
   runId: string;
   outletId: string | null;
@@ -40,6 +77,7 @@ export interface NormalizeContext<TRaw> {
   runId: string;
   outletId: string | null;
   records: TRaw[];
+  supabase: ParserSupabaseClient;
 }
 
 export interface NormalizeResult<TCanonical> {
@@ -52,6 +90,7 @@ export interface CommitContext<TCanonical> {
   outletId: string | null;
   records: TCanonical[];
   committedBy: string;
+  supabase: ParserSupabaseClient;
 }
 
 export interface CommitResult {
@@ -60,6 +99,7 @@ export interface CommitResult {
 
 export interface RollbackContext {
   runId: string;
+  supabase: ParserSupabaseClient;
 }
 
 /**

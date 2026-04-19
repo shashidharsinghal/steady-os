@@ -19,6 +19,7 @@ import type { Tables } from "@stride-os/db";
 import type { IngestionStatus } from "@stride-os/ingestion";
 
 type Run = Tables<"ingestion_runs">;
+type Outlet = Pick<Tables<"outlets">, "id" | "name" | "brand">;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -44,7 +45,7 @@ export default async function IngestPage() {
 
   if (role !== "partner") redirect("/dashboard");
 
-  const [{ data: activeRuns }, { data: historyRuns }] = await Promise.all([
+  const [{ data: activeRuns }, { data: historyRuns }, { data: outlets }] = await Promise.all([
     supabase
       .from("ingestion_runs")
       .select("*")
@@ -56,10 +57,12 @@ export default async function IngestPage() {
       .in("status", HISTORY_STATUSES)
       .order("uploaded_at", { ascending: false })
       .limit(50),
+    supabase.from("outlets").select("id, name, brand").is("archived_at", null).order("name"),
   ]);
 
   const active = (activeRuns ?? []) as Run[];
   const history = (historyRuns ?? []) as Run[];
+  const outletOptions = (outlets ?? []) as Outlet[];
 
   return (
     <div className="space-y-8">
@@ -70,7 +73,7 @@ export default async function IngestPage() {
         </p>
       </div>
 
-      <UploadDropzone />
+      <UploadDropzone outlets={outletOptions} />
 
       {active.length > 0 && (
         <section className="space-y-3">

@@ -143,6 +143,18 @@ Analysis: `docs/features/ingestion-analysis.md`
 - Phase 2 (next): upload UI at `/ingest`, server actions for the full lifecycle
 - Phase 3 (after): error surfaces, preview routing, loading/error states
 
+### Sales Dashboard (`/dashboard`)
+
+Spec: `docs/features/sales-dashboard.md`
+
+- Partner-only dashboard focused on a single outlet morning check, trend review, and decision support
+- Server-side data helpers aggregate `sales_orders`, `customers`, and freshness metadata from `ingestion_runs`
+- Freshness banner communicates stale data honestly and links straight back to `/ingest`
+- Morning check strip shows revenue, orders, and AOV for yesterday or the most recent day with data, plus a revenue-dip alert
+- Trend review adds period selection, previous-period comparison, revenue trend, channel mix, and channel summary cards
+- Decision surface includes the weekly heatmap, channel economics table, payment method breakdown, and customer activity card
+- Ingestion commits and rollbacks revalidate `/dashboard` so newly committed data appears quickly
+
 ### Design System
 
 Spec: `docs/features/design-system.md`

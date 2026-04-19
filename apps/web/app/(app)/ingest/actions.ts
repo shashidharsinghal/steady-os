@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requirePartner } from "@/lib/auth";
 import { getAllParsers, getParser, IngestionError } from "@stride-os/ingestion";
 import type { DetectionMethod } from "@stride-os/ingestion";
+import type { ParserSupabaseClient } from "@stride-os/ingestion";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = ["xlsx", "xls", "csv"];
@@ -115,6 +116,7 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
   await requirePartner();
 
   const supabase = await createClient();
+  const parserSupabase = supabase as unknown as ParserSupabaseClient;
 
   const { data: run, error: fetchErr } = await supabase
     .from("ingestion_runs")
@@ -180,6 +182,7 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
       runId,
       outletId: run.outlet_id,
       records: parseResult.records,
+      supabase: parserSupabase,
     });
 
     if (rowErrors.length > 0) {
@@ -227,6 +230,7 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
 
   revalidatePath(`/ingest/${runId}`);
   revalidatePath("/ingest");
+  revalidatePath("/dashboard");
 }
 
 // ─── Commit ──────────────────────────────────────────────────────────────────
@@ -235,6 +239,7 @@ export async function commitRun(runId: string): Promise<void> {
   const userId = await requirePartner();
 
   const supabase = await createClient();
+  const parserSupabase = supabase as unknown as ParserSupabaseClient;
 
   const { data: run, error: fetchErr } = await supabase
     .from("ingestion_runs")
@@ -264,6 +269,7 @@ export async function commitRun(runId: string): Promise<void> {
       outletId: run.outlet_id,
       records: canonicalRecords,
       committedBy: userId,
+      supabase: parserSupabase,
     });
 
     await supabase
@@ -290,6 +296,7 @@ export async function commitRun(runId: string): Promise<void> {
 
   revalidatePath(`/ingest/${runId}`);
   revalidatePath("/ingest");
+  revalidatePath("/dashboard");
 }
 
 // ─── Cancel ──────────────────────────────────────────────────────────────────
@@ -329,6 +336,7 @@ export async function rollbackRun(runId: string, reason: string): Promise<void> 
   const userId = await requirePartner();
 
   const supabase = await createClient();
+  const parserSupabase = supabase as unknown as ParserSupabaseClient;
 
   const { data: run, error: fetchErr } = await supabase
     .from("ingestion_runs")
@@ -344,7 +352,7 @@ export async function rollbackRun(runId: string, reason: string): Promise<void> 
   const parser = getParser(run.source_type);
   if (!parser) throw new Error(`No parser available for source type "${run.source_type}".`);
 
-  await parser.rollback({ runId });
+  await parser.rollback({ runId, supabase: parserSupabase });
 
   await supabase
     .from("ingestion_runs")

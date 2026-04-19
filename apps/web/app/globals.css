@@ -32,6 +32,10 @@
     --sidebar: 36 38% 97%;
     --sidebar-foreground: 220 24% 14%;
     --sidebar-border: 30 28% 88%;
+    --chart-dine-in: 22 92% 50%;
+    --chart-takeaway: 196 76% 42%;
+    --chart-swiggy: 146 63% 38%;
+    --chart-zomato: 352 78% 54%;
   }
 
   .dark {
@@ -62,6 +66,10 @@
     --sidebar: 220 20% 9%;
     --sidebar-foreground: 34 33% 96%;
     --sidebar-border: 220 14% 18%;
+    --chart-dine-in: 28 94% 62%;
+    --chart-takeaway: 196 80% 62%;
+    --chart-swiggy: 149 56% 54%;
+    --chart-zomato: 352 84% 64%;
   }
 }
 
