@@ -116,6 +116,7 @@ export interface PaymentTransaction {
   tid: string | null;
   mid: string | null;
   batch_no: string | null;
+  customer_id: string | null;
   matched_order_id: string | null;
   match_confidence: string | null;
   matched_at: string | null;

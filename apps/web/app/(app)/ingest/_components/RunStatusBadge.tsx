@@ -9,6 +9,7 @@ const labelMap: Record<IngestionStatus, string> = {
   committed: "Committed",
   rolled_back: "Rolled back",
   failed: "Failed",
+  purged: "Purged",
 };
 
 const colorMap: Record<IngestionStatus, string> = {
@@ -19,6 +20,7 @@ const colorMap: Record<IngestionStatus, string> = {
   committed: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
   rolled_back: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
   failed: "bg-red-500/12 text-red-700 dark:text-red-300",
+  purged: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
 };
 
 export function RunStatusBadge({ status }: { status: IngestionStatus }) {

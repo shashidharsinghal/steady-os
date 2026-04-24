@@ -9,8 +9,10 @@ import {
   LayoutDashboard,
   Settings,
   Store,
+  TrendingUp,
   Upload,
   Users,
+  UserRoundSearch,
 } from "lucide-react";
 import { Button } from "@stride-os/ui";
 import { cn } from "@stride-os/ui/lib/utils";
@@ -19,6 +21,8 @@ import { ThemeToggle } from "./theme-toggle";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/pnl", label: "P&L", icon: TrendingUp },
+  { href: "/customers", label: "Customers", icon: UserRoundSearch },
   { href: "/outlets", label: "Outlets", icon: Store },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/ingest", label: "Ingest", icon: Upload },

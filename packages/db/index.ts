@@ -257,7 +257,7 @@ export type Database = {
           file_size_bytes: number;
           file_mime_type: string | null;
           file_storage_path: string;
-          file_sha256: string;
+          file_sha256: string | null;
           status:
             | "uploaded"
             | "parsing"
@@ -265,13 +265,17 @@ export type Database = {
             | "committing"
             | "committed"
             | "rolled_back"
-            | "failed";
+            | "failed"
+            | "purged";
           parsing_started_at: string | null;
           parsing_completed_at: string | null;
           committing_started_at: string | null;
           committed_at: string | null;
           rolled_back_at: string | null;
           failed_at: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          purge_scheduled_at: string | null;
           rows_seen: number | null;
           rows_parsed: number | null;
           rows_to_insert: number | null;
@@ -302,7 +306,7 @@ export type Database = {
           file_size_bytes: number;
           file_mime_type?: string | null;
           file_storage_path: string;
-          file_sha256: string;
+          file_sha256: string | null;
           status?:
             | "uploaded"
             | "parsing"
@@ -310,13 +314,16 @@ export type Database = {
             | "committing"
             | "committed"
             | "rolled_back"
-            | "failed";
+            | "failed"
+            | "purged";
           parsing_started_at?: string | null;
           parsing_completed_at?: string | null;
           committing_started_at?: string | null;
           committed_at?: string | null;
           rolled_back_at?: string | null;
           failed_at?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
           rows_seen?: number | null;
           rows_parsed?: number | null;
           rows_to_insert?: number | null;
@@ -347,7 +354,7 @@ export type Database = {
           file_size_bytes?: number;
           file_mime_type?: string | null;
           file_storage_path?: string;
-          file_sha256?: string;
+          file_sha256?: string | null;
           status?:
             | "uploaded"
             | "parsing"
@@ -355,13 +362,16 @@ export type Database = {
             | "committing"
             | "committed"
             | "rolled_back"
-            | "failed";
+            | "failed"
+            | "purged";
           parsing_started_at?: string | null;
           parsing_completed_at?: string | null;
           committing_started_at?: string | null;
           committed_at?: string | null;
           rolled_back_at?: string | null;
           failed_at?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
           rows_seen?: number | null;
           rows_parsed?: number | null;
           rows_to_insert?: number | null;
@@ -375,7 +385,14 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
-        Relationships: never[];
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_runs_deleted_by_fkey";
+            columns: ["deleted_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       ingestion_row_errors: {
         Row: {
@@ -520,6 +537,159 @@ export type Database = {
             foreignKeyName: "customers_first_ingestion_run_id_fkey";
             columns: ["first_ingestion_run_id"];
             referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      customer_identities: {
+        Row: {
+          id: string;
+          customer_id: string;
+          kind: Database["public"]["Enums"]["identity_kind"];
+          value: string;
+          display_value: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          observation_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          customer_id: string;
+          kind: Database["public"]["Enums"]["identity_kind"];
+          value: string;
+          display_value?: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          observation_count?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          customer_id?: string;
+          kind?: Database["public"]["Enums"]["identity_kind"];
+          value?: string;
+          display_value?: string | null;
+          first_seen_at?: string;
+          last_seen_at?: string;
+          observation_count?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customer_identities_customer_id_fkey";
+            columns: ["customer_id"];
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      customer_merges: {
+        Row: {
+          id: string;
+          primary_customer_id: string;
+          secondary_customer_id: string;
+          merged_by: string;
+          reason: string | null;
+          merged_at: string;
+          undo_available_until: string;
+          secondary_snapshot: Json;
+          restored_at: string | null;
+          restored_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          primary_customer_id: string;
+          secondary_customer_id: string;
+          merged_by: string;
+          reason?: string | null;
+          merged_at?: string;
+          undo_available_until?: string;
+          secondary_snapshot?: Json;
+          restored_at?: string | null;
+          restored_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          primary_customer_id?: string;
+          secondary_customer_id?: string;
+          merged_by?: string;
+          reason?: string | null;
+          merged_at?: string;
+          undo_available_until?: string;
+          secondary_snapshot?: Json;
+          restored_at?: string | null;
+          restored_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customer_merges_merged_by_fkey";
+            columns: ["merged_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "customer_merges_primary_customer_id_fkey";
+            columns: ["primary_customer_id"];
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "customer_merges_restored_by_fkey";
+            columns: ["restored_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "customer_merges_secondary_customer_id_fkey";
+            columns: ["secondary_customer_id"];
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      customer_dismissed_matches: {
+        Row: {
+          id: string;
+          customer_a_id: string;
+          customer_b_id: string;
+          dismissed_by: string;
+          reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          customer_a_id: string;
+          customer_b_id: string;
+          dismissed_by: string;
+          reason?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          customer_a_id?: string;
+          customer_b_id?: string;
+          dismissed_by?: string;
+          reason?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customer_dismissed_matches_customer_a_id_fkey";
+            columns: ["customer_a_id"];
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "customer_dismissed_matches_customer_b_id_fkey";
+            columns: ["customer_b_id"];
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "customer_dismissed_matches_dismissed_by_fkey";
+            columns: ["dismissed_by"];
+            referencedRelation: "users";
             referencedColumns: ["id"];
           },
         ];
@@ -746,6 +916,7 @@ export type Database = {
           tid: string | null;
           mid: string | null;
           batch_no: string | null;
+          customer_id: string | null;
           matched_order_id: string | null;
           match_confidence: string | null;
           matched_at: string | null;
@@ -774,6 +945,7 @@ export type Database = {
           tid?: string | null;
           mid?: string | null;
           batch_no?: string | null;
+          customer_id?: string | null;
           matched_order_id?: string | null;
           match_confidence?: string | null;
           matched_at?: string | null;
@@ -802,6 +974,7 @@ export type Database = {
           tid?: string | null;
           mid?: string | null;
           batch_no?: string | null;
+          customer_id?: string | null;
           matched_order_id?: string | null;
           match_confidence?: string | null;
           matched_at?: string | null;
@@ -814,6 +987,12 @@ export type Database = {
             foreignKeyName: "payment_transactions_ingestion_run_id_fkey";
             columns: ["ingestion_run_id"];
             referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_transactions_customer_id_fkey";
+            columns: ["customer_id"];
+            referencedRelation: "customers";
             referencedColumns: ["id"];
           },
           {
@@ -963,6 +1142,206 @@ export type Database = {
           },
         ];
       };
+      pnl_reports: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          period_start: string;
+          period_end: string;
+          entity_name: string | null;
+          store_name: string | null;
+          gross_sales_paise: number;
+          trade_discount_paise: number;
+          net_sales_paise: number;
+          dine_in_sales_paise: number;
+          swiggy_sales_paise: number;
+          zomato_sales_paise: number;
+          other_online_sales_paise: number;
+          opening_stock_paise: number;
+          purchases_paise: number;
+          closing_stock_paise: number;
+          cogs_paise: number;
+          gross_profit_paise: number;
+          total_expenses_paise: number;
+          miscellaneous_paise: number;
+          online_aggregator_charges_paise: number;
+          salaries_paise: number;
+          rent_total_paise: number;
+          utilities_paise: number;
+          marketing_fees_paise: number;
+          management_fees_paise: number;
+          logistic_cost_paise: number;
+          corporate_expenses_paise: number;
+          maintenance_paise: number;
+          net_profit_paise: number;
+          gst_amount_paise: number;
+          invoice_value_paise: number;
+          paid_by_franchise_items: Json;
+          raw_text: string;
+          ingestion_run_id: string;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          purge_scheduled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          period_start: string;
+          period_end: string;
+          entity_name?: string | null;
+          store_name?: string | null;
+          gross_sales_paise?: number;
+          trade_discount_paise?: number;
+          net_sales_paise?: number;
+          dine_in_sales_paise?: number;
+          swiggy_sales_paise?: number;
+          zomato_sales_paise?: number;
+          other_online_sales_paise?: number;
+          opening_stock_paise?: number;
+          purchases_paise?: number;
+          closing_stock_paise?: number;
+          cogs_paise?: number;
+          gross_profit_paise?: number;
+          total_expenses_paise?: number;
+          miscellaneous_paise?: number;
+          online_aggregator_charges_paise?: number;
+          salaries_paise?: number;
+          rent_total_paise?: number;
+          utilities_paise?: number;
+          marketing_fees_paise?: number;
+          management_fees_paise?: number;
+          logistic_cost_paise?: number;
+          corporate_expenses_paise?: number;
+          maintenance_paise?: number;
+          net_profit_paise?: number;
+          gst_amount_paise?: number;
+          invoice_value_paise?: number;
+          paid_by_franchise_items?: Json;
+          raw_text: string;
+          ingestion_run_id: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          purge_scheduled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          period_start?: string;
+          period_end?: string;
+          entity_name?: string | null;
+          store_name?: string | null;
+          gross_sales_paise?: number;
+          trade_discount_paise?: number;
+          net_sales_paise?: number;
+          dine_in_sales_paise?: number;
+          swiggy_sales_paise?: number;
+          zomato_sales_paise?: number;
+          other_online_sales_paise?: number;
+          opening_stock_paise?: number;
+          purchases_paise?: number;
+          closing_stock_paise?: number;
+          cogs_paise?: number;
+          gross_profit_paise?: number;
+          total_expenses_paise?: number;
+          miscellaneous_paise?: number;
+          online_aggregator_charges_paise?: number;
+          salaries_paise?: number;
+          rent_total_paise?: number;
+          utilities_paise?: number;
+          marketing_fees_paise?: number;
+          management_fees_paise?: number;
+          logistic_cost_paise?: number;
+          corporate_expenses_paise?: number;
+          maintenance_paise?: number;
+          net_profit_paise?: number;
+          gst_amount_paise?: number;
+          invoice_value_paise?: number;
+          paid_by_franchise_items?: Json;
+          raw_text?: string;
+          ingestion_run_id?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          purge_scheduled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pnl_reports_deleted_by_fkey";
+            columns: ["deleted_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pnl_reports_ingestion_run_id_fkey";
+            columns: ["ingestion_run_id"];
+            referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pnl_reports_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      pnl_expense_lines: {
+        Row: {
+          id: string;
+          report_id: string;
+          category: string;
+          subcategory: string | null;
+          label: string;
+          amount_paise: number;
+          paid_by_franchise: boolean;
+          notes: string | null;
+          ingestion_run_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          report_id: string;
+          category: string;
+          subcategory?: string | null;
+          label: string;
+          amount_paise?: number;
+          paid_by_franchise?: boolean;
+          notes?: string | null;
+          ingestion_run_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          report_id?: string;
+          category?: string;
+          subcategory?: string | null;
+          label?: string;
+          amount_paise?: number;
+          paid_by_franchise?: boolean;
+          notes?: string | null;
+          ingestion_run_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pnl_expense_lines_ingestion_run_id_fkey";
+            columns: ["ingestion_run_id"];
+            referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pnl_expense_lines_report_id_fkey";
+            columns: ["report_id"];
+            referencedRelation: "pnl_reports";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       active_outlets: {
@@ -983,6 +1362,121 @@ export type Database = {
         };
         Relationships: never[];
       };
+      active_ingestion_runs: {
+        Row: {
+          id: string;
+          outlet_id: string | null;
+          uploaded_by: string;
+          uploaded_at: string;
+          source_type: string;
+          detection_method:
+            | "filename_pattern"
+            | "header_inspection"
+            | "content_llm"
+            | "user_override";
+          detection_confidence: number | null;
+          user_confirmed_source: boolean;
+          file_name: string;
+          file_size_bytes: number;
+          file_mime_type: string | null;
+          file_storage_path: string;
+          file_sha256: string | null;
+          status: Database["public"]["Enums"]["ingestion_status"];
+          parsing_started_at: string | null;
+          parsing_completed_at: string | null;
+          committing_started_at: string | null;
+          committed_at: string | null;
+          rolled_back_at: string | null;
+          failed_at: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          purge_scheduled_at: string | null;
+          rows_seen: number | null;
+          rows_parsed: number | null;
+          rows_to_insert: number | null;
+          rows_duplicate: number | null;
+          rows_errored: number | null;
+          preview_payload: Json | null;
+          error_details: Json | null;
+          committed_by: string | null;
+          rolled_back_by: string | null;
+          rollback_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Relationships: never[];
+      };
+      active_pnl_reports: {
+        Row: Database["public"]["Tables"]["pnl_reports"]["Row"];
+        Relationships: Database["public"]["Tables"]["pnl_reports"]["Relationships"];
+      };
+      active_sales_orders: {
+        Row: Database["public"]["Tables"]["sales_orders"]["Row"];
+        Relationships: Database["public"]["Tables"]["sales_orders"]["Relationships"];
+      };
+      active_payment_transactions: {
+        Row: Database["public"]["Tables"]["payment_transactions"]["Row"];
+        Relationships: Database["public"]["Tables"]["payment_transactions"]["Relationships"];
+      };
+      active_aggregator_payouts: {
+        Row: Database["public"]["Tables"]["aggregator_payouts"]["Row"];
+        Relationships: Database["public"]["Tables"]["aggregator_payouts"]["Relationships"];
+      };
+      active_customer_profiles: {
+        Row: {
+          id: string;
+          name: string | null;
+          phone_last_4: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          total_orders: number;
+          total_spend_paise: number;
+          identity_count: number;
+          phone_identity_count: number;
+          upi_identity_count: number;
+          card_identity_count: number;
+          has_aggregator_orders: boolean;
+          has_dine_in: boolean;
+          aggregator_order_count: number;
+          dine_in_visit_count: number;
+          highest_segment: string;
+          primary_identifier: string;
+          search_text: string | null;
+        };
+        Relationships: never[];
+      };
+      customer_profiles: {
+        Row: {
+          id: string;
+          name: string | null;
+          phone_last_4: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          total_orders: number;
+          total_spend_paise: number;
+          identity_count: number;
+          phone_identity_count: number;
+          upi_identity_count: number;
+          card_identity_count: number;
+          has_aggregator_orders: boolean;
+          has_dine_in: boolean;
+          aggregator_order_count: number;
+          dine_in_visit_count: number;
+          highest_segment: string;
+          primary_identifier: string;
+          search_text: string | null;
+        };
+        Relationships: never[];
+      };
+      customer_segment_overview: {
+        Row: {
+          segment: string;
+          customer_count: number;
+          total_spend_paise: number;
+          average_order_count: number;
+        };
+        Relationships: never[];
+      };
     };
     Functions: {
       is_partner: {
@@ -997,6 +1491,34 @@ export type Database = {
         Args: { raw_phone: string };
         Returns: string;
       };
+      hash_card_fingerprint: {
+        Args: {
+          raw_card_last_4: string | null;
+          raw_card_issuer: string | null;
+          raw_card_network: string | null;
+        };
+        Returns: string;
+      };
+      customer_segment_label: {
+        Args: {
+          p_total_orders: number;
+          p_first_seen_at: string;
+          p_last_seen_at: string;
+        };
+        Returns: string;
+      };
+      refresh_customer_aggregates: {
+        Args: { customer_ids?: string[] | null };
+        Returns: undefined;
+      };
+      delete_orphan_customers: {
+        Args: { customer_ids?: string[] | null };
+        Returns: undefined;
+      };
+      purge_deleted_runs: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
       sales_source_row_hash: {
         Args: { parts: string[] };
         Returns: string;
@@ -1010,6 +1532,7 @@ export type Database = {
       salary_change_reason: "joining" | "hike" | "demotion" | "correction";
       sales_channel: "dine_in" | "takeaway" | "swiggy" | "zomato" | "other";
       sales_status: "success" | "cancelled" | "refunded" | "partial";
+      identity_kind: "phone_hash" | "upi_vpa" | "card_fingerprint";
       payment_method:
         | "cash"
         | "card"
@@ -1026,7 +1549,8 @@ export type Database = {
         | "committing"
         | "committed"
         | "rolled_back"
-        | "failed";
+        | "failed"
+        | "purged";
       detection_method: "filename_pattern" | "header_inspection" | "content_llm" | "user_override";
     };
     CompositeTypes: Record<string, never>;

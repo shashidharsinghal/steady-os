@@ -4,15 +4,18 @@ import { ArrowRight, Upload } from "lucide-react";
 import { Button, Card, CardContent } from "@stride-os/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
-import { FreshnessBanner } from "./_components/FreshnessBanner";
-import { MorningCheckStrip } from "./_components/MorningCheckStrip";
-import { TrendReviewStrip } from "./_components/TrendReviewStrip";
-import { DecisionSurfaceStrip } from "./_components/DecisionSurfaceStrip";
+import { MorningCheckSection } from "./_components/MorningCheckSection";
+import { PeriodViewSection } from "./_components/PeriodViewSection";
+import { ChannelEconomicsSection } from "./_components/ChannelEconomicsSection";
+import { DiscountPerformanceSection } from "./_components/DiscountPerformanceSection";
+import { CustomerTilesSection } from "./_components/CustomerTilesSection";
 import {
-  buildFreshnessMessage,
   chooseDashboardOutlet,
-  getDashboardOverview,
-  getDashboardPeriodPayload,
+  getChannelEconomics,
+  getCustomerTiles,
+  getDiscountPerformance,
+  getMorningCheck,
+  getPeriodView,
   resolveDashboardPeriod,
 } from "./_lib/dashboard";
 
@@ -41,9 +44,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     return (
       <div className="space-y-6">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Sales dashboard</h1>
+          <p className="text-primary text-sm font-medium uppercase tracking-[0.22em]">
+            Sales dashboard v2
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight">No outlet selected yet</h1>
           <p className="text-muted-foreground text-sm">
-            Start with an outlet so the morning check has somewhere to pull from.
+            Create an outlet first, then ingest sales data to unlock the morning check.
           </p>
         </div>
 
@@ -53,9 +59,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <Upload className="h-6 w-6" />
             </div>
             <div className="space-y-2">
-              <p className="text-lg font-semibold">No active outlets yet</p>
+              <p className="text-lg font-semibold">Start with an outlet</p>
               <p className="text-muted-foreground max-w-xl text-sm leading-6">
-                Create an outlet first, then ingest sales files to unlock the dashboard.
+                The v2 dashboard is built for outlet-level operational decisions. Create an outlet,
+                then ingest Petpooja, Pine Labs, or Swiggy files.
               </p>
             </div>
             <Button asChild>
@@ -76,21 +83,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? resolvedSearchParams.compare[0]
       : resolvedSearchParams.compare) === "true";
 
-  const [overview, payload] = await Promise.all([
-    getDashboardOverview(selectedOutlet.id),
-    getDashboardPeriodPayload(selectedOutlet.id, period, compare),
-  ]);
+  const [morningCheck, periodView, channelEconomics, discountPerformance, customerTiles] =
+    await Promise.all([
+      getMorningCheck(selectedOutlet.id),
+      getPeriodView(selectedOutlet.id, period, compare),
+      getChannelEconomics(selectedOutlet.id, period),
+      getDiscountPerformance(selectedOutlet.id, period),
+      getCustomerTiles(selectedOutlet.id, period),
+    ]);
 
-  if (!overview) {
+  if (!morningCheck) {
     return (
       <div className="space-y-6">
-        <div className="space-y-1">
-          <p className="text-primary text-sm font-medium uppercase tracking-[0.18em]">
-            Sales dashboard
+        <div className="space-y-2">
+          <p className="text-primary text-sm font-medium uppercase tracking-[0.22em]">
+            Sales dashboard v2
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">{selectedOutlet.name}</h1>
           <p className="text-muted-foreground text-sm">
-            {selectedOutlet.brand ?? "Outlet"} is ready for its first sales ingestion run.
+            {selectedOutlet.brand ?? "This outlet"} is ready for its first committed sales
+            ingestion.
           </p>
         </div>
 
@@ -100,8 +112,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="space-y-2">
                 <p className="text-lg font-semibold">No committed sales data yet</p>
                 <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-                  Upload Petpooja, Pine Labs, or Swiggy files from the ingest workspace. Once a run
-                  is committed, this dashboard will surface freshness, trends, and decision cues.
+                  Upload sales files from the ingest workspace. Once a run is committed, this
+                  dashboard will answer the five questions from the v2 spec: how you did given the
+                  day, when the rush hits, who is returning, what channels really net, and how
+                  discounts behaved.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -120,9 +134,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="bg-background/70 rounded-[20px] border p-5">
               <p className="text-sm font-semibold">What unlocks after the first commit</p>
               <div className="text-muted-foreground mt-3 grid gap-2 text-sm">
-                <p>Freshness banner with honest staleness messaging</p>
-                <p>Yesterday revenue, orders, and AOV with trailing context</p>
-                <p>Trend review by period, channel mix, and decision heatmap</p>
+                <p>Day-of-week-aware morning check instead of a naive trailing average</p>
+                <p>Period view with comparison, DoW ribbon, and channel trend decomposition</p>
+                <p>Channel take-home economics, discount performance, and customer tiles</p>
               </div>
             </div>
           </CardContent>
@@ -131,27 +145,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     );
   }
 
-  const freshnessMessage = buildFreshnessMessage(overview.freshness);
-
   return (
-    <div className="space-y-6">
-      <section className="bg-card space-y-4 rounded-[24px] border p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="space-y-8 pb-10">
+      <section className="bg-card relative overflow-hidden rounded-[28px] border p-6">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.12),transparent_42%),radial-gradient(circle_at_bottom_right,hsl(var(--secondary)/0.12),transparent_40%)]" />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-2">
-            <p className="text-primary text-sm font-medium uppercase tracking-[0.2em]">
-              Sales dashboard
+            <p className="text-primary text-sm font-medium uppercase tracking-[0.22em]">
+              Sales dashboard v2
             </p>
             <div className="space-y-1">
               <h1 className="text-3xl font-semibold tracking-tight">{selectedOutlet.name}</h1>
-              <p className="text-muted-foreground text-sm leading-6">
-                Morning check first, then trend review and channel decisions for{" "}
-                {selectedOutlet.brand ?? "this outlet"}.
+              <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+                Morning check first, then period context, channel take-home, discounts, and customer
+                movement for {selectedOutlet.brand ?? "this outlet"}.
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link href="/ingest">Upload sales files</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/customers">Open customers</Link>
             </Button>
             <Button asChild>
               <Link href="/outlets">
@@ -161,18 +177,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </Button>
           </div>
         </div>
-
-        <FreshnessBanner
-          state={overview.freshness.state}
-          headline={freshnessMessage.headline}
-          detail={freshnessMessage.detail}
-          href={freshnessMessage.href}
-        />
       </section>
 
-      <MorningCheckStrip overview={overview} />
-      <TrendReviewStrip period={period} compare={compare} payload={payload} />
-      <DecisionSurfaceStrip payload={payload} />
+      <MorningCheckSection data={morningCheck} />
+      <PeriodViewSection data={periodView} compare={compare} />
+      <ChannelEconomicsSection rows={channelEconomics} />
+      <DiscountPerformanceSection
+        data={discountPerformance}
+        periodLabel={periodView.period.label}
+      />
+      <CustomerTilesSection data={customerTiles} />
+      {/* TODO: Add a compact P&L summary card here once monthly report history is deep enough to be decision-useful. */}
     </div>
   );
 }

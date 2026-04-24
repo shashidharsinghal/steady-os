@@ -5,7 +5,8 @@ export type IngestionStatus =
   | "committing"
   | "committed"
   | "rolled_back"
-  | "failed";
+  | "failed"
+  | "purged";
 
 export type DetectionMethod =
   | "filename_pattern"
@@ -26,7 +27,7 @@ export interface IngestionRun {
   file_size_bytes: number;
   file_mime_type: string | null;
   file_storage_path: string;
-  file_sha256: string;
+  file_sha256: string | null;
   status: IngestionStatus;
   parsing_started_at: string | null;
   parsing_completed_at: string | null;
@@ -34,6 +35,9 @@ export interface IngestionRun {
   committed_at: string | null;
   rolled_back_at: string | null;
   failed_at: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  purge_scheduled_at: string | null;
   rows_seen: number | null;
   rows_parsed: number | null;
   rows_to_insert: number | null;
@@ -66,9 +70,10 @@ export const VALID_TRANSITIONS: Record<IngestionStatus, IngestionStatus[]> = {
   parsing: ["preview_ready", "failed"],
   preview_ready: ["committing", "failed"],
   committing: ["committed", "failed"],
-  committed: ["rolled_back"],
+  committed: ["rolled_back", "purged"],
   rolled_back: [],
   failed: [],
+  purged: [],
 };
 
 export function isValidTransition(from: IngestionStatus, to: IngestionStatus): boolean {

@@ -9,11 +9,8 @@ export function CompareToggle({ enabled }: { enabled: boolean }) {
 
   function toggle() {
     const params = new URLSearchParams(searchParams.toString());
-    if (enabled) {
-      params.delete("compare");
-    } else {
-      params.set("compare", "true");
-    }
+    if (enabled) params.delete("compare");
+    else params.set("compare", "true");
     router.push(`/dashboard?${params.toString()}`);
   }
 

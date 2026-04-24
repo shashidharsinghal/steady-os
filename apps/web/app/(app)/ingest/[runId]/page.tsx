@@ -20,6 +20,7 @@ import {
   RollbackButton,
   DeleteRunButton,
 } from "../_components/RunActions";
+import { PnlPreviewCard } from "../_components/PnlPreviewCard";
 import type { Tables } from "@stride-os/db";
 import type { IngestionStatus } from "@stride-os/ingestion";
 
@@ -63,6 +64,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
   const status = typedRun.status as IngestionStatus;
   const errors = (rowErrors ?? []) as RowError[];
   const errorDetails = typedRun.error_details as { message?: string } | null;
+  const previewPayload = typedRun.preview_payload as Record<string, unknown> | null;
 
   return (
     <div className="space-y-6">
@@ -83,6 +85,13 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
 
       {/* Status panel */}
       <StatusPanel run={typedRun} status={status} errorMessage={errorDetails?.message} />
+
+      {typedRun.source_type === "franchise_pnl_pdf" && previewPayload ? (
+        <PnlPreviewCard
+          runId={typedRun.id}
+          payload={previewPayload as Parameters<typeof PnlPreviewCard>[0]["payload"]}
+        />
+      ) : null}
 
       {/* Row errors */}
       {errors.length > 0 && (

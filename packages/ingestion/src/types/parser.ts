@@ -83,6 +83,16 @@ export interface NormalizeContext<TRaw> {
 export interface NormalizeResult<TCanonical> {
   toInsert: TCanonical[];
   duplicateCount: number;
+  /**
+   * Optional parser-specific payload shown in the preview UI.
+   * Falls back to { displayName, canonicalRecords } when omitted.
+   */
+  previewPayload?: Record<string, unknown>;
+  /**
+   * Optional override for "rows_to_insert" shown on the run.
+   * Useful when a parser commits multiple canonical tables from one logical record.
+   */
+  rowsToInsertCount?: number;
 }
 
 export interface CommitContext<TCanonical> {

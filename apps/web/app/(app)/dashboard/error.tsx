@@ -16,7 +16,7 @@ export default function DashboardError({
 
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <h2 className="mb-2 text-lg font-semibold">Dashboard failed to load</h2>
+      <h2 className="mb-2 text-lg font-semibold">Dashboard v2 failed to load</h2>
       <p className="text-muted-foreground mb-6 max-w-lg text-sm">
         {error.message ?? "An unexpected error occurred while loading the sales dashboard."}
       </p>

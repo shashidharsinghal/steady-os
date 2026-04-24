@@ -23,6 +23,11 @@ import {
   truncateLast4,
   truncateUpiVpa,
 } from "./helpers";
+import {
+  deleteOrphanCustomers,
+  refreshCustomerAggregates,
+  resolvePineLabsCustomerIdentity,
+} from "./customer-identities";
 
 interface PineLabsRawRecord {
   rowNumber: number;
@@ -253,32 +258,53 @@ export const pineLabsPosParser: Parser<PineLabsRawRecord, PineLabsCanonicalRecor
       throw new IngestionError("parse_error", "Pine Labs transactions require an outlet.");
     }
 
-    const rows = ctx.records.map((record) => ({
-      outlet_id: ctx.outletId,
-      source: "pine_labs",
-      source_transaction_id: record.sourceTransactionId,
-      transaction_type: record.transactionType,
-      amount_paise: record.amountPaise,
-      currency: record.currency,
-      transacted_at: record.transactedAt,
-      status: record.status,
-      card_issuer: record.cardIssuer,
-      card_network: record.cardNetwork,
-      card_last_4: record.cardLast4,
-      is_contactless: record.isContactless,
-      is_emi: record.isEmi,
-      upi_vpa: record.upiVpa,
-      upi_name: record.upiName,
-      hardware_id: record.hardwareId,
-      tid: record.tid,
-      mid: record.mid,
-      batch_no: record.batchNo,
-      matched_order_id: null,
-      match_confidence: null,
-      matched_at: null,
-      raw_data: record.rawData,
-      ingestion_run_id: ctx.runId,
-    }));
+    const identityCache = new Map<string, string>();
+    const touchedCustomerIds: string[] = [];
+    const rows = [];
+
+    for (const record of ctx.records) {
+      const customerId = await resolvePineLabsCustomerIdentity({
+        supabase: ctx.supabase,
+        runId: ctx.runId,
+        observedAt: record.transactedAt,
+        upiVpa: record.upiVpa,
+        upiName: record.upiName,
+        cardLast4: record.cardLast4,
+        cardIssuer: record.cardIssuer,
+        cardNetwork: record.cardNetwork,
+        cache: identityCache,
+      });
+
+      if (customerId) touchedCustomerIds.push(customerId);
+
+      rows.push({
+        outlet_id: ctx.outletId,
+        source: "pine_labs",
+        source_transaction_id: record.sourceTransactionId,
+        transaction_type: record.transactionType,
+        amount_paise: record.amountPaise,
+        currency: record.currency,
+        transacted_at: record.transactedAt,
+        status: record.status,
+        card_issuer: record.cardIssuer,
+        card_network: record.cardNetwork,
+        card_last_4: record.cardLast4,
+        is_contactless: record.isContactless,
+        is_emi: record.isEmi,
+        upi_vpa: record.upiVpa,
+        upi_name: record.upiName,
+        hardware_id: record.hardwareId,
+        tid: record.tid,
+        mid: record.mid,
+        batch_no: record.batchNo,
+        customer_id: customerId,
+        matched_order_id: null,
+        match_confidence: null,
+        matched_at: null,
+        raw_data: record.rawData,
+        ingestion_run_id: ctx.runId,
+      });
+    }
 
     if (rows.length > 0) {
       const insertResult = await ctx.supabase.from("payment_transactions").insert(rows);
@@ -337,14 +363,30 @@ export const pineLabsPosParser: Parser<PineLabsRawRecord, PineLabsCanonicalRecor
       assertSupabaseSuccess(updateResult, "Failed to store Pine Labs reconciliation result.");
     }
 
+    await refreshCustomerAggregates(ctx.supabase, touchedCustomerIds);
+
     return { rowsInserted: rows.length };
   },
 
   async rollback(ctx: RollbackContext) {
+    const touchedCustomerResult = await ctx.supabase
+      .from("payment_transactions")
+      .select("customer_id")
+      .eq("ingestion_run_id", ctx.runId);
+    assertSupabaseSuccess(touchedCustomerResult, "Failed to load affected Pine Labs customers.");
+    const touchedCustomerIds = (
+      (touchedCustomerResult.data as Array<{ customer_id: string | null }> | null) ?? []
+    )
+      .map((row) => row.customer_id)
+      .filter((value): value is string => Boolean(value));
+
     const deleteRows = await ctx.supabase
       .from("payment_transactions")
       .delete()
       .eq("ingestion_run_id", ctx.runId);
     assertSupabaseSuccess(deleteRows, "Failed to roll back Pine Labs transactions.");
+
+    await refreshCustomerAggregates(ctx.supabase, touchedCustomerIds);
+    await deleteOrphanCustomers(ctx.supabase, touchedCustomerIds);
   },
 };

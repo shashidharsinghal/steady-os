@@ -1,11 +1,11 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Button, Input, cn } from "@stride-os/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Button, Input } from "@stride-os/ui";
 import type { DashboardPeriodKey } from "../_lib/dashboard";
 
-const PERIOD_OPTIONS: Array<{ key: DashboardPeriodKey; label: string }> = [
+const OPTIONS: Array<{ key: DashboardPeriodKey; label: string }> = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
   { key: "7d", label: "7d" },
@@ -33,11 +33,11 @@ export function PeriodSelector({
     setEnd(customEnd ?? "");
   }, [customStart, customEnd]);
 
-  function push(next: URLSearchParams) {
-    router.push(`/dashboard?${next.toString()}`);
+  function push(params: URLSearchParams) {
+    router.push(`/dashboard?${params.toString()}`);
   }
 
-  function setPeriod(nextPeriod: DashboardPeriodKey) {
+  function choose(nextPeriod: DashboardPeriodKey) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", nextPeriod);
     if (nextPeriod !== "custom") {
@@ -61,14 +61,13 @@ export function PeriodSelector({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {PERIOD_OPTIONS.map((option) => (
+        {OPTIONS.map((option) => (
           <Button
             key={option.key}
             type="button"
-            variant={period === option.key ? "default" : "outline"}
             size="sm"
-            onClick={() => setPeriod(option.key)}
-            className={cn(period === option.key && "shadow-none")}
+            variant={option.key === period ? "default" : "outline"}
+            onClick={() => choose(option.key)}
           >
             {option.label}
           </Button>

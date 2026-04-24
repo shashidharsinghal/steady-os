@@ -3,6 +3,7 @@ import type { Parser } from "../types/parser";
 import { petpoojaDayWiseParser } from "./petpoojaDayWise";
 import { petpoojaOrdersMasterParser } from "./petpoojaOrdersMaster";
 import { pineLabsPosParser } from "./pineLabsPos";
+import { pnlPdfParser } from "./pnlPdf";
 import { swiggyAnnexureParser } from "./swiggyAnnexure";
 import { zomatoAnnexureParser } from "./zomatoAnnexure";
 
@@ -10,6 +11,7 @@ const salesParsers = [
   petpoojaOrdersMasterParser,
   petpoojaDayWiseParser,
   pineLabsPosParser,
+  pnlPdfParser,
   swiggyAnnexureParser,
   zomatoAnnexureParser,
 ];
@@ -24,6 +26,7 @@ export {
   petpoojaDayWiseParser,
   petpoojaOrdersMasterParser,
   pineLabsPosParser,
+  pnlPdfParser,
   swiggyAnnexureParser,
   zomatoAnnexureParser,
 };

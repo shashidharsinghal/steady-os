@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import { parseRun, commitRun, cancelRun, rollbackRun, deleteRun } from "../actions";
 import type { Tables } from "@stride-os/db";
-import { getAllParsers } from "@stride-os/ingestion";
+import { INGEST_SOURCE_PICKER_OPTIONS } from "../_lib/document-types";
 
 type Run = Tables<"ingestion_runs">;
 
@@ -203,16 +203,7 @@ export function SourcePicker({
   currentSource: string;
   onChange: (value: string) => void;
 }) {
-  const parsers = getAllParsers();
-
-  if (parsers.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        Auto-detected: <span className="font-medium">{currentSource}</span>
-        {currentSource === "unknown" && " — no parsers are registered yet."}
-      </p>
-    );
-  }
+  const parsers = INGEST_SOURCE_PICKER_OPTIONS;
 
   return (
     <select

@@ -27,6 +27,12 @@ import {
   toIstIsoString,
   truncateLast4,
 } from "./helpers";
+import {
+  createCustomerRecord,
+  deleteOrphanCustomers,
+  findOrCreateCustomerByIdentity,
+  refreshCustomerAggregates,
+} from "./customer-identities";
 
 interface PetpoojaRawRecord {
   rowNumber: number;
@@ -190,83 +196,6 @@ function findPetpoojaHeaderRow(
   }
 
   throw new IngestionError("missing_required_column", "Could not find the Petpooja header row.");
-}
-
-async function refreshCustomerAggregates(
-  supabase: NormalizeContext<PetpoojaRawRecord>["supabase"],
-  customerIds: string[]
-) {
-  if (customerIds.length === 0) return;
-
-  const uniqueCustomerIds = Array.from(new Set(customerIds));
-
-  for (const chunk of batch(uniqueCustomerIds)) {
-    const ordersResult = await supabase
-      .from("sales_orders")
-      .select("customer_id, ordered_at, total_amount_paise")
-      .in("customer_id", chunk);
-    assertSupabaseSuccess(ordersResult, "Failed to refresh customer aggregates.");
-
-    const rows =
-      (ordersResult.data as Array<{
-        customer_id: string | null;
-        ordered_at: string;
-        total_amount_paise: number;
-      }> | null) ?? [];
-
-    const byCustomer = new Map<
-      string,
-      { firstSeenAt: string; lastSeenAt: string; totalOrders: number; totalSpendPaise: number }
-    >();
-
-    rows.forEach((row) => {
-      if (!row.customer_id) return;
-      const existing = byCustomer.get(row.customer_id);
-      if (!existing) {
-        byCustomer.set(row.customer_id, {
-          firstSeenAt: row.ordered_at,
-          lastSeenAt: row.ordered_at,
-          totalOrders: 1,
-          totalSpendPaise: row.total_amount_paise,
-        });
-        return;
-      }
-
-      existing.firstSeenAt =
-        existing.firstSeenAt < row.ordered_at ? existing.firstSeenAt : row.ordered_at;
-      existing.lastSeenAt =
-        existing.lastSeenAt > row.ordered_at ? existing.lastSeenAt : row.ordered_at;
-      existing.totalOrders += 1;
-      existing.totalSpendPaise += row.total_amount_paise;
-    });
-
-    for (const customerId of chunk) {
-      const aggregate = byCustomer.get(customerId);
-
-      if (!aggregate) {
-        const zeroOut = await supabase
-          .from("customers")
-          .update({
-            total_orders: 0,
-            total_spend_paise: 0,
-          })
-          .eq("id", customerId);
-        assertSupabaseSuccess(zeroOut, "Failed to reset customer aggregates.");
-        continue;
-      }
-
-      const updateResult = await supabase
-        .from("customers")
-        .update({
-          first_seen_at: aggregate.firstSeenAt,
-          last_seen_at: aggregate.lastSeenAt,
-          total_orders: aggregate.totalOrders,
-          total_spend_paise: aggregate.totalSpendPaise,
-        })
-        .eq("id", customerId);
-      assertSupabaseSuccess(updateResult, "Failed to update customer aggregates.");
-    }
-  }
 }
 
 export const petpoojaOrdersMasterParser: Parser<PetpoojaRawRecord, PetpoojaCanonicalRecord> = {
@@ -435,50 +364,19 @@ export const petpoojaOrdersMasterParser: Parser<PetpoojaRawRecord, PetpoojaCanon
         customerPhoneLast4 = truncateLast4(normalizedPhone);
 
         if (phoneHash) {
-          if (customerCache.has(phoneHash)) {
-            customerId = customerCache.get(phoneHash) ?? null;
-          } else {
-            const existingCustomer = await ctx.supabase
-              .from("customers")
-              .select("id")
-              .eq("phone_hash", phoneHash)
-              .single();
-
-            if (existingCustomer.error && existingCustomer.error.code !== "PGRST116") {
-              throw new IngestionError(
-                "commit_conflict",
-                existingCustomer.error.message || "Failed to look up existing customer."
-              );
-            }
-
-            const existingCustomerId = (existingCustomer.data as { id: string } | null)?.id ?? null;
-
-            if (existingCustomerId) {
-              customerId = existingCustomerId;
-            } else {
-              const insertCustomer = await ctx.supabase.from("customers").insert({
-                phone_hash: phoneHash,
-                phone_last_4: customerPhoneLast4,
-                name: record.customerNameNormalized,
-                first_seen_at: record.orderedAt,
-                last_seen_at: record.orderedAt,
-                total_orders: 0,
-                total_spend_paise: 0,
-                first_ingestion_run_id: ctx.runId,
-              });
-              assertSupabaseSuccess(insertCustomer, "Failed to create customer.");
-
-              const fetchedCustomer = await ctx.supabase
-                .from("customers")
-                .select("id")
-                .eq("phone_hash", phoneHash)
-                .single();
-              assertSupabaseSuccess(fetchedCustomer, "Failed to fetch created customer.");
-              customerId = (fetchedCustomer.data as { id: string } | null)?.id ?? null;
-            }
-
-            if (customerId) customerCache.set(phoneHash, customerId);
-          }
+          customerId = await findOrCreateCustomerByIdentity({
+            supabase: ctx.supabase,
+            runId: ctx.runId,
+            observedAt: record.orderedAt,
+            preferredName: record.customerNameNormalized,
+            phoneLast4: customerPhoneLast4,
+            cache: customerCache,
+            identity: {
+              kind: "phone_hash",
+              value: phoneHash,
+              displayValue: customerPhoneLast4 ? `···${customerPhoneLast4}` : null,
+            },
+          });
         }
       } else if (
         record.customerNameNormalized &&
@@ -488,27 +386,12 @@ export const petpoojaOrdersMasterParser: Parser<PetpoojaRawRecord, PetpoojaCanon
         if (customerCache.has(cacheKey)) {
           customerId = customerCache.get(cacheKey) ?? null;
         } else {
-          const insertCustomer = await ctx.supabase.from("customers").insert({
-            phone_hash: null,
-            phone_last_4: null,
-            name: record.customerNameNormalized,
-            first_seen_at: record.orderedAt,
-            last_seen_at: record.orderedAt,
-            total_orders: 0,
-            total_spend_paise: 0,
-            first_ingestion_run_id: ctx.runId,
+          customerId = await createCustomerRecord({
+            supabase: ctx.supabase,
+            runId: ctx.runId,
+            observedAt: record.orderedAt,
+            preferredName: record.customerNameNormalized,
           });
-          assertSupabaseSuccess(insertCustomer, "Failed to create customer.");
-
-          const fetchedCustomer = await ctx.supabase
-            .from("customers")
-            .select("id")
-            .eq("first_ingestion_run_id", ctx.runId)
-            .eq("name", record.customerNameNormalized)
-            .order("created_at", { ascending: false });
-          assertSupabaseSuccess(fetchedCustomer, "Failed to fetch created customer.");
-          const fetchedRows = (fetchedCustomer.data as Array<{ id: string }> | null) ?? [];
-          customerId = fetchedRows[0]?.id ?? null;
           if (customerId) customerCache.set(cacheKey, customerId);
         }
       }
@@ -584,5 +467,6 @@ export const petpoojaOrdersMasterParser: Parser<PetpoojaRawRecord, PetpoojaCanon
     assertSupabaseSuccess(deleteOrders, "Failed to roll back Petpooja orders.");
 
     await refreshCustomerAggregates(ctx.supabase, touchedCustomerIds);
+    await deleteOrphanCustomers(ctx.supabase, touchedCustomerIds);
   },
 };

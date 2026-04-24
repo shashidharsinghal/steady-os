@@ -302,3 +302,18 @@ export async function rpcHashPhone(
   assertSupabaseSuccess(result, "Failed to hash phone.");
   return (result.data as string | null) ?? null;
 }
+
+export async function rpcHashCardFingerprint(
+  supabase: ParserSupabaseClient,
+  rawCardLast4: string | null,
+  rawCardIssuer: string | null,
+  rawCardNetwork: string | null
+): Promise<string | null> {
+  const result = await supabase.rpc("hash_card_fingerprint", {
+    raw_card_last_4: rawCardLast4,
+    raw_card_issuer: rawCardIssuer,
+    raw_card_network: rawCardNetwork,
+  });
+  assertSupabaseSuccess(result, "Failed to hash card fingerprint.");
+  return (result.data as string | null) ?? null;
+}

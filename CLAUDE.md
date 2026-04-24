@@ -155,6 +155,27 @@ Spec: `docs/features/sales-dashboard.md`
 - Decision surface includes the weekly heatmap, channel economics table, payment method breakdown, and customer activity card
 - Ingestion commits and rollbacks revalidate `/dashboard` so newly committed data appears quickly
 
+### Customer Intelligence (`/customers`)
+
+Spec: `docs/features/customer-intelligence.md`
+
+- Unified customer workspace across Petpooja and Pine Labs with partner-only routes for list, detail, merges, lapsed, and segments
+- `customer_identities` extends the sales schema so customers can be resolved by phone hash, UPI VPA, or salted card fingerprint
+- Pine Labs transactions now link to `customer_id`, and ingestion normalizers refresh cross-source customer aggregates
+- Customer profiles and segment labels are exposed through SQL views/functions so the UI can filter deterministic segments quickly
+- Merge suggestions use deterministic name-to-VPA heuristics; partner merge and dismiss actions are audited through customer merge tables
+
+### P&L Ingestion (`/pnl`)
+
+Spec: `docs/features/pnl-ingestion.md`
+
+- Franchise monthly P&L PDFs now ingest through the shared `/ingest` flow via the `franchise_pnl_pdf` parser
+- Canonical schema lives in `pnl_reports` and `pnl_expense_lines`, with an `active_pnl_reports` view and partner/manager RLS
+- The parser uses `pdftotext -layout`, stores raw extracted text for re-parsing, and surfaces reconciliation warnings in preview
+- `/pnl` provides month cards, deleted-report recovery, and links back into `/ingest` for uploads
+- `/pnl/[id]` shows trading account, expense breakdown, bottom line, and month-over-month deltas when prior history exists
+- Soft delete matches the ingestion pattern; `purge_deleted_runs()` now also purges aged P&L reports and frees dedup hashes after purge
+
 ### Design System
 
 Spec: `docs/features/design-system.md`
@@ -172,7 +193,7 @@ Stride OS ingests data from many external sources via the shared **ingestion fra
 Each data domain has its own parsers, canonical tables, and feature package:
 
 - **Sales** (`packages/sales-ingestion/`, tables `sales_orders`, `customers`, `payment_transactions`, `aggregator_payouts`) — in progress
-- **P&L** (future, tables `financial_periods`, `pnl_line_items`)
+- **P&L** (`pnl_reports`, `pnl_expense_lines`) — monthly franchise PDF ingestion and review
 - **Expenses** (future, tables `vendor_invoices`, `expense_lines`)
 - **Documents** (future, structured extractions from uploaded PDFs)
 
