@@ -425,6 +425,12 @@ export const petpoojaOrdersMasterParser: Parser<PetpoojaRawRecord, PetpoojaCanon
         aggregator_commission_paise: null,
         aggregator_fees_paise: null,
         aggregator_net_payout_paise: null,
+        settlement_status:
+          record.channel === "dine_in" || record.channel === "takeaway"
+            ? "settled"
+            : record.channel === "swiggy" || record.channel === "zomato"
+              ? "pending"
+              : "unknown",
         payment_method: record.paymentMethod,
         payment_method_raw: record.paymentMethodRaw,
         customer_id: customerId,

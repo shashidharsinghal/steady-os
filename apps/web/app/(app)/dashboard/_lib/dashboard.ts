@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { formatRelativeDistance } from "@stride-os/shared";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -6,7 +7,7 @@ const CHANNELS = ["dine_in", "takeaway", "swiggy", "zomato", "other"] as const;
 
 export type DashboardPeriodKey = "today" | "yesterday" | "7d" | "30d" | "mtd" | "custom";
 export type DashboardChannel = (typeof CHANNELS)[number];
-export type DashboardFreshnessState = "fresh" | "stale" | "very-stale" | "critical";
+export type DashboardFreshnessState = "fresh" | "stale" | "critical";
 export type DashboardAlertTone = "warn" | "info";
 export type DashboardRibbonTone = "up" | "flat" | "down" | "none";
 
@@ -23,6 +24,7 @@ type SalesOrderRow = {
   aggregator_commission_paise: number | string | null;
   aggregator_fees_paise: number | string | null;
   aggregator_net_payout_paise: number | string | null;
+  settlement_status: "settled" | "pending" | "unknown";
   customer_id: string | null;
   raw_data: unknown;
 };
@@ -114,6 +116,8 @@ export type RushPattern = {
   peakWindowStartHour: number | null;
   peakWindowEndHour: number | null;
   peakWindowSharePct: number | null;
+  fallbackLabel: string | null;
+  mode: "target_day" | "all_days" | "insufficient";
   hours: Array<{
     hour: number;
     label: string;
@@ -162,13 +166,14 @@ export type PeriodViewData = {
 export type ChannelEconomicsRow = {
   channel: DashboardChannel;
   label: string;
-  orders: number;
+  ordersTotal: number;
+  ordersSettled: number;
+  ordersPending: number;
   grossPaise: number;
-  commissionPaise: number;
-  feesPaise: number;
-  netPaise: number;
+  commissionPaise: number | null;
+  feesPaise: number | null;
+  netPaise: number | null;
   netPerRs100: number | null;
-  awaitingParser: boolean;
 };
 
 export type DiscountCouponRow = {
@@ -425,41 +430,71 @@ function getHourOfDay(iso: string): number {
 function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern {
   const todayKey = getDayKey(now.toISOString());
   const todayDow = getDayOfWeekFromKey(todayKey);
-  const candidateRows = rows.filter(
-    (row) =>
-      getDayKey(row.ordered_at) < todayKey &&
-      getDayOfWeekFromKey(getDayKey(row.ordered_at)) === todayDow
+  const historicalRows = rows.filter((row) => getDayKey(row.ordered_at) < todayKey);
+  const candidateRows = historicalRows.filter(
+    (row) => getDayOfWeekFromKey(getDayKey(row.ordered_at)) === todayDow
   );
 
-  const dayKeys = Array.from(new Set(candidateRows.map((row) => getDayKey(row.ordered_at))))
+  const targetDayKeys = Array.from(new Set(candidateRows.map((row) => getDayKey(row.ordered_at))))
     .sort((left, right) => (left < right ? 1 : -1))
     .slice(0, 4);
-
-  const scopedRows =
-    dayKeys.length > 0
-      ? candidateRows.filter((row) => dayKeys.includes(getDayKey(row.ordered_at)))
-      : rows.filter((row) => getDayKey(row.ordered_at) < todayKey);
-
-  const matchedDayKeys = Array.from(new Set(scopedRows.map((row) => getDayKey(row.ordered_at))));
-  const hours = Array.from({ length: 13 }, (_, index) => index + 11).map((hour) => {
-    const dailyTotals = matchedDayKeys.map((dayKey) =>
-      scopedRows
-        .filter(
-          (row) => getDayKey(row.ordered_at) === dayKey && getHourOfDay(row.ordered_at) === hour
-        )
-        .reduce((sum, row) => sum + toNumber(row.total_amount_paise), 0)
-    );
-    const averageRevenuePaise =
-      dailyTotals.length > 0
-        ? Math.round(dailyTotals.reduce((sum, value) => sum + value, 0) / dailyTotals.length)
-        : 0;
-
-    return {
-      hour,
-      label: hourLabel(hour),
-      averageRevenuePaise,
-    };
+  const qualifiedTargetDayKeys = targetDayKeys.filter((dayKey) => {
+    const orders = candidateRows.filter((row) => getDayKey(row.ordered_at) === dayKey).length;
+    return orders >= 3;
   });
+
+  const allHistoricalDayKeys = Array.from(
+    new Set(historicalRows.map((row) => getDayKey(row.ordered_at)))
+  )
+    .sort((left, right) => (left < right ? 1 : -1))
+    .slice(0, 28);
+  const qualifiedAllDayKeys = allHistoricalDayKeys.filter((dayKey) => {
+    const orders = historicalRows.filter((row) => getDayKey(row.ordered_at) === dayKey).length;
+    return orders >= 3;
+  });
+
+  let scopedRows: SalesOrderRow[] = [];
+  let matchedDayKeys: string[] = [];
+  let baselineLabel = "No weekday pattern yet";
+  let fallbackLabel: string | null = null;
+  let mode: RushPattern["mode"] = "insufficient";
+
+  if (qualifiedTargetDayKeys.length >= 2) {
+    matchedDayKeys = qualifiedTargetDayKeys;
+    scopedRows = candidateRows.filter((row) => matchedDayKeys.includes(getDayKey(row.ordered_at)));
+    baselineLabel = `${weekdayLabel(todayDow)} pattern from the last ${matchedDayKeys.length} week${matchedDayKeys.length === 1 ? "" : "s"}`;
+    mode = "target_day";
+  } else if (qualifiedAllDayKeys.length >= 2) {
+    matchedDayKeys = qualifiedAllDayKeys;
+    scopedRows = historicalRows.filter((row) => matchedDayKeys.includes(getDayKey(row.ordered_at)));
+    baselineLabel = "Showing rush pattern across all weekdays";
+    fallbackLabel = `Showing rush pattern for all weekdays (no ${weekdayLabel(todayDow)} data yet).`;
+    mode = "all_days";
+  } else {
+    fallbackLabel = `Typical ${weekdayLabel(todayDow)} peak hour will show after 2 weeks of data.`;
+  }
+
+  const hours = Array.from({ length: 13 }, (_, index) => index + 11)
+    .map((hour) => {
+      const dailyTotals = matchedDayKeys.map((dayKey) =>
+        scopedRows
+          .filter(
+            (row) => getDayKey(row.ordered_at) === dayKey && getHourOfDay(row.ordered_at) === hour
+          )
+          .reduce((sum, row) => sum + toNumber(row.total_amount_paise), 0)
+      );
+      const averageRevenuePaise =
+        dailyTotals.length > 0
+          ? Math.round(dailyTotals.reduce((sum, value) => sum + value, 0) / dailyTotals.length)
+          : 0;
+
+      return {
+        hour,
+        label: hourLabel(hour),
+        averageRevenuePaise,
+      };
+    })
+    .filter((row) => mode !== "insufficient" && row.averageRevenuePaise > 0);
 
   const total = hours.reduce((sum, row) => sum + row.averageRevenuePaise, 0);
   const peakHourRow = hours.reduce(
@@ -486,10 +521,7 @@ function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern 
   }
 
   return {
-    baselineLabel:
-      matchedDayKeys.length > 0
-        ? `${weekdayLabel(todayDow)} pattern from the last ${matchedDayKeys.length} week${matchedDayKeys.length === 1 ? "" : "s"}`
-        : "No weekday pattern yet",
+    baselineLabel,
     baselineCount: matchedDayKeys.length,
     peakHour: peakHourRow.averageRevenuePaise > 0 ? peakHourRow.hour : null,
     peakHourLabel:
@@ -499,6 +531,8 @@ function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern 
     peakWindowStartHour,
     peakWindowEndHour,
     peakWindowSharePct,
+    fallbackLabel,
+    mode,
     hours,
   };
 }
@@ -509,10 +543,9 @@ function buildFreshness(args: {
   now?: Date;
 }): DashboardFreshness {
   const { lastUpload, latestOrder, now = new Date() } = args;
-  const reference = lastUpload ?? latestOrder;
   const href = "/ingest";
 
-  if (!reference) {
+  if (!latestOrder && !lastUpload) {
     return {
       state: "critical",
       headline: "No committed sales ingestion yet.",
@@ -523,18 +556,22 @@ function buildFreshness(args: {
     };
   }
 
-  const hoursSince = Math.max(
+  const stalenessReference = latestOrder ? new Date(latestOrder) : new Date(lastUpload!);
+  const hoursSinceLatestOrder = Math.max(
     0,
-    (now.getTime() - new Date(reference).getTime()) / (60 * 60 * 1000)
+    (now.getTime() - stalenessReference.getTime()) / (60 * 60 * 1000)
   );
+  const staleDays = Math.max(1, Math.round(hoursSinceLatestOrder / 24));
   const latestOrderText = latestOrder
-    ? `Most recent order: ${formatIstDateTime(new Date(latestOrder))}.`
+    ? `Most recent order: ${formatRelativeDistance(new Date(latestOrder))}.`
     : null;
 
-  if (hoursSince <= 24) {
+  if (hoursSinceLatestOrder < 36) {
     return {
       state: "fresh",
-      headline: `Data updated ${Math.round(hoursSince)} hour${Math.round(hoursSince) === 1 ? "" : "s"} ago.`,
+      headline: lastUpload
+        ? `Data updated ${formatRelativeDistance(new Date(lastUpload))}.`
+        : "Data is current.",
       detail: latestOrderText,
       href,
       lastUpload,
@@ -542,24 +579,11 @@ function buildFreshness(args: {
     };
   }
 
-  if (hoursSince <= 48) {
+  if (hoursSinceLatestOrder <= 24 * 7) {
     return {
       state: "stale",
-      headline: `Data is ${Math.round(hoursSince / 24)} day${Math.round(hoursSince / 24) === 1 ? "" : "s"} old. Upload recent files for current numbers.`,
-      detail: latestOrderText,
-      href,
-      lastUpload,
-      latestOrder,
-    };
-  }
-
-  if (hoursSince <= 24 * 7) {
-    return {
-      state: "very-stale",
-      headline: `Data is ${Math.round(hoursSince / 24)} days stale.`,
-      detail: latestOrder
-        ? `The dashboard below reflects orders through ${formatIstDate(new Date(latestOrder))}.`
-        : latestOrderText,
+      headline: `Data is ${staleDays} day${staleDays === 1 ? "" : "s"} old. Upload recent files to see current numbers.`,
+      detail: null,
       href,
       lastUpload,
       latestOrder,
@@ -568,7 +592,7 @@ function buildFreshness(args: {
 
   return {
     state: "critical",
-    headline: `Data is more than a week old.`,
+    headline: `Data is ${staleDays} days stale.`,
     detail: latestOrder
       ? `The dashboard below reflects orders through ${formatIstDate(new Date(latestOrder))}, not today.`
       : latestOrderText,
@@ -626,22 +650,14 @@ export function buildFreshnessMessage(freshness: LegacyDashboardFreshness): {
 
   if (freshness.state === "stale") {
     return {
-      headline: `Data updated ${formatIstDateTime(lastUploadDate)}. Upload recent files for current numbers.`,
-      detail: latestOrderText,
-      href: "/ingest",
-    };
-  }
-
-  if (freshness.state === "very-stale") {
-    return {
-      headline: `Data is ${freshness.staleDays ?? 0} days old. The dashboard below reflects orders through ${latestOrderText ? formatIstDate(new Date(freshness.latestOrder!)) : formatIstDate(lastUploadDate)}.`,
+      headline: `Data is ${freshness.staleDays ?? 0} days old. Upload recent files to see current numbers.`,
       detail: latestOrderText,
       href: "/ingest",
     };
   }
 
   return {
-    headline: `Data is more than a week old. The dashboard below reflects orders through ${latestOrderText ? formatIstDate(new Date(freshness.latestOrder!)) : formatIstDate(lastUploadDate)}, not today.`,
+    headline: `Data is ${freshness.staleDays ?? 0} days stale. The dashboard below reflects orders through ${latestOrderText ? formatIstDate(new Date(freshness.latestOrder!)) : formatIstDate(lastUploadDate)}, not today.`,
     detail: latestOrderText,
     href: "/ingest",
   };
@@ -963,7 +979,7 @@ export async function getMorningCheck(outletId: string): Promise<MorningCheckDat
       supabase
         .from("active_sales_orders")
         .select(
-          "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, customer_id, raw_data"
+          "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, settlement_status, customer_id, raw_data"
         )
         .eq("outlet_id", outletId)
         .eq("status", "success")
@@ -1025,7 +1041,7 @@ export async function getPeriodView(
   const { data } = await supabase
     .from("active_sales_orders")
     .select(
-      "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, customer_id, raw_data"
+      "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, settlement_status, customer_id, raw_data"
     )
     .eq("outlet_id", outletId)
     .eq("status", "success")
@@ -1058,7 +1074,7 @@ export async function getChannelEconomics(
   const { data } = await supabase
     .from("active_sales_orders")
     .select(
-      "channel, source, total_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise"
+      "channel, source, total_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, settlement_status"
     )
     .eq("outlet_id", outletId)
     .eq("status", "success")
@@ -1073,52 +1089,71 @@ export async function getChannelEconomics(
       aggregator_commission_paise: number | string | null;
       aggregator_fees_paise: number | string | null;
       aggregator_net_payout_paise: number | string | null;
+      settlement_status: "settled" | "pending" | "unknown";
     }>
   ).filter((row) => row.channel !== "other" || toNumber(row.total_amount_paise) > 0);
 
   return CHANNELS.map((channel) => {
     const channelRows = rows.filter((row) => row.channel === channel);
     const grossPaise = channelRows.reduce((sum, row) => sum + toNumber(row.total_amount_paise), 0);
-    const commissionPaise = channelRows.reduce(
-      (sum, row) => sum + toNumber(row.aggregator_commission_paise),
+    const settledRows = channelRows.filter((row) => row.settlement_status === "settled");
+    const pendingRows = channelRows.filter((row) => row.settlement_status === "pending");
+    const settledGrossPaise = settledRows.reduce(
+      (sum, row) => sum + toNumber(row.total_amount_paise),
       0
     );
-    const feesPaise = channelRows.reduce(
-      (sum, row) => sum + toNumber(row.aggregator_fees_paise),
-      0
-    );
-    const netPaise = channelRows.reduce((sum, row) => {
-      const explicitNet = toNumber(row.aggregator_net_payout_paise);
-      return (
-        sum +
-        (explicitNet > 0
-          ? explicitNet
-          : toNumber(row.total_amount_paise) -
-            toNumber(row.aggregator_commission_paise) -
-            toNumber(row.aggregator_fees_paise))
-      );
-    }, 0);
+    const commissionPaise =
+      settledRows.length > 0
+        ? settledRows.reduce((sum, row) => sum + toNumber(row.aggregator_commission_paise), 0)
+        : null;
+    const feesPaise =
+      settledRows.length > 0
+        ? settledRows.reduce((sum, row) => sum + toNumber(row.aggregator_fees_paise), 0)
+        : null;
+    const netPaise =
+      settledRows.length > 0
+        ? settledRows.reduce((sum, row) => {
+            const explicitNet = toNumber(row.aggregator_net_payout_paise);
+            return (
+              sum +
+              (explicitNet > 0
+                ? explicitNet
+                : toNumber(row.total_amount_paise) -
+                  toNumber(row.aggregator_commission_paise) -
+                  toNumber(row.aggregator_fees_paise))
+            );
+          }, 0)
+        : null;
+
+    const ordersSettled =
+      channel === "dine_in" || channel === "takeaway" ? channelRows.length : settledRows.length;
+    const ordersPending = channel === "dine_in" || channel === "takeaway" ? 0 : pendingRows.length;
 
     return {
       channel,
       label: channelLabel(channel),
-      orders: channelRows.length,
+      ordersTotal: channelRows.length,
+      ordersSettled,
+      ordersPending,
       grossPaise,
       commissionPaise,
       feesPaise,
       netPaise:
-        channel === "dine_in" || channel === "takeaway" || channel === "other"
+        channel === "dine_in" || channel === "takeaway"
           ? grossPaise
-          : Math.max(netPaise, 0),
+          : channel === "other"
+            ? null
+            : netPaise != null
+              ? Math.max(netPaise, 0)
+              : null,
       netPerRs100:
-        grossPaise > 0
-          ? ((channel === "dine_in" || channel === "takeaway" || channel === "other"
-              ? grossPaise
-              : Math.max(netPaise, 0)) /
-              grossPaise) *
-            100
-          : null,
-      awaitingParser: channel === "zomato" && channelRows.length === 0,
+        channel === "dine_in" || channel === "takeaway"
+          ? grossPaise > 0
+            ? 100
+            : null
+          : netPaise != null && settledGrossPaise > 0
+            ? (Math.max(netPaise, 0) / settledGrossPaise) * 100
+            : null,
     };
   });
 }

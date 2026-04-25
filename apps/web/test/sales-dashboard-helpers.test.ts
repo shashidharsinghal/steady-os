@@ -66,7 +66,7 @@ describe("sales dashboard helpers", () => {
     });
 
     expect(message.href).toBe("/ingest");
-    expect(message.headline).toContain("more than a week old");
+    expect(message.headline).toContain("9 days stale");
     expect(message.headline).toContain("09 Apr 2026");
     expect(message.detail).toContain("Most recent order:");
   });

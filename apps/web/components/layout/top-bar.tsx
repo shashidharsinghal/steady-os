@@ -1,5 +1,4 @@
-import { Bell, Search } from "lucide-react";
-import { Button } from "@stride-os/ui";
+import { Search } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 export function TopBar({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -19,9 +18,6 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
               Cmd K
             </span>
           </div>
-          <Button type="button" variant="outline" size="icon" className="h-9 w-9">
-            <Bell className="h-4 w-4" />
-          </Button>
           <div className="hidden xl:block">
             <ThemeToggle />
           </div>

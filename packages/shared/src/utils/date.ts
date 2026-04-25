@@ -1,4 +1,12 @@
-import { format, parseISO, isValid, startOfDay, endOfDay, subDays } from "date-fns";
+import {
+  endOfDay,
+  format,
+  formatDistanceToNow,
+  isValid,
+  parseISO,
+  startOfDay,
+  subDays,
+} from "date-fns";
 
 export function formatDate(date: Date | string, pattern = "dd MMM yyyy"): string {
   const d = typeof date === "string" ? parseISO(date) : date;
@@ -7,6 +15,11 @@ export function formatDate(date: Date | string, pattern = "dd MMM yyyy"): string
 
 export function formatDateTime(date: Date | string): string {
   return formatDate(date, "dd MMM yyyy, HH:mm");
+}
+
+export function formatRelativeDistance(date: Date | string): string {
+  const d = typeof date === "string" ? parseISO(date) : date;
+  return isValid(d) ? formatDistanceToNow(d, { addSuffix: true }) : "—";
 }
 
 export function toISODate(date: Date): string {

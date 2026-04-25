@@ -89,6 +89,17 @@ export function parseMoneyToPaise(value: unknown, fieldName: string): number {
 
 function parseDateParts(value: string): { year: number; month: number; day: number } | null {
   const trimmed = value.trim();
+  const isoDateTimeMatch = trimmed.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APMapm]{2}))?)?$/
+  );
+  if (isoDateTimeMatch) {
+    return {
+      year: Number(isoDateTimeMatch[1]),
+      month: Number(isoDateTimeMatch[2]),
+      day: Number(isoDateTimeMatch[3]),
+    };
+  }
+
   const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (isoMatch) {
     return {
@@ -123,6 +134,22 @@ function parseDateParts(value: string): { year: number; month: number; day: numb
 
 function parseTimeParts(value: string): { hour: number; minute: number; second: number } | null {
   const cleaned = value.trim().replace(/^t/i, "");
+  const dateTimeMatch = cleaned.match(
+    /(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APMapm]{2}))?$/
+  );
+  if (dateTimeMatch) {
+    let hour = Number(dateTimeMatch[1]);
+    const meridiem = dateTimeMatch[4]?.toLowerCase();
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+
+    return {
+      hour,
+      minute: Number(dateTimeMatch[2]),
+      second: Number(dateTimeMatch[3] ?? 0),
+    };
+  }
+
   const match = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) return null;
 
@@ -166,7 +193,14 @@ export function toIstIsoString(dateValue: unknown, timeValue?: unknown): string 
       second: Math.floor(parsedDate.S),
     };
   } else {
-    dateParts = parseDateParts(stripExcelNoise(dateValue));
+    const normalizedDate = stripExcelNoise(dateValue);
+    dateParts = parseDateParts(normalizedDate);
+    if (timeValue == null || stripExcelNoise(timeValue) === "") {
+      const parsedInlineTime = parseTimeParts(normalizedDate);
+      if (parsedInlineTime) {
+        timeParts = parsedInlineTime;
+      }
+    }
   }
 
   if (!dateParts) {

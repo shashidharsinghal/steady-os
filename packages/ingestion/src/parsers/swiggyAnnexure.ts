@@ -450,6 +450,7 @@ export const swiggyAnnexureParser: Parser<SwiggyRawBundle, SwiggyCanonicalRecord
         aggregator_commission_paise: record.payload.aggregatorCommissionPaise,
         aggregator_fees_paise: record.payload.aggregatorFeesPaise,
         aggregator_net_payout_paise: record.payload.aggregatorNetPayoutPaise,
+        settlement_status: "settled",
         payment_method: "online_aggregator",
         payment_method_raw: "Swiggy Online",
         customer_id: null,
