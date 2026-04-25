@@ -91,6 +91,7 @@ describe("sales ingestion fixtures", () => {
     const parseResult = await petpoojaOrdersMasterParser.parse(ctx);
     expect(parseResult.records.length).toBeGreaterThan(400);
     expect(errors.length).toBe(0);
+    expect(parseResult.records[0]?.orderedAt).toContain("T16:19:31.000Z");
 
     const normalizeResult = await petpoojaOrdersMasterParser.normalize({
       runId: "test-run",
@@ -99,6 +100,7 @@ describe("sales ingestion fixtures", () => {
       supabase: createSupabaseStub(),
     });
     expect(normalizeResult.toInsert.length).toBe(parseResult.records.length);
+    expect(normalizeResult.toInsert[0]?.channel).toBe("dine_in");
   });
 
   it("detects and parses Petpooja Day-Wise validation workbook", async () => {
@@ -150,6 +152,7 @@ describe("sales ingestion fixtures", () => {
     });
     expect(normalizeResult.toInsert.some((record) => record.kind === "payout")).toBe(true);
     expect(normalizeResult.toInsert.some((record) => record.kind === "order")).toBe(true);
+    expect(parseResult.records[0]?.orders[0]?.aggregatorNetPayoutPaise).toBeGreaterThan(0);
   });
 
   it("keeps the taco PDF outside the spreadsheet ingestion path", () => {
