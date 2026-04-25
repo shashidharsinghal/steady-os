@@ -11,7 +11,7 @@ export function RushPatternCard({ rush }: { rush: RushPattern }) {
         <p className="text-lg font-semibold">
           {rush.peakHourLabel
             ? `Today's rush will likely peak around ${rush.peakHourLabel}`
-            : "Rush pattern will appear after more data"}
+            : (rush.fallbackLabel ?? "Typical rush pattern is still building")}
         </p>
         <p className="text-muted-foreground text-sm">
           {rush.peakWindowSharePct != null &&
@@ -22,22 +22,24 @@ export function RushPatternCard({ rush }: { rush: RushPattern }) {
         </p>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {rush.hours.map((row) => (
-          <div key={row.hour} className="grid grid-cols-[56px_1fr_auto] items-center gap-3">
-            <span className="text-muted-foreground text-xs">{row.label}</span>
-            <div className="bg-muted/45 h-3 overflow-hidden rounded-full">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--secondary)))]"
-                style={{ width: `${(row.averageRevenuePaise / max) * 100}%` }}
-              />
+      {rush.mode === "insufficient" ? null : (
+        <div className="mt-5 space-y-3">
+          {rush.hours.map((row) => (
+            <div key={row.hour} className="grid grid-cols-[56px_1fr_auto] items-center gap-3">
+              <span className="text-muted-foreground text-xs">{row.label}</span>
+              <div className="bg-muted/45 h-3 overflow-hidden rounded-full">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--secondary)))]"
+                  style={{ width: `${(row.averageRevenuePaise / max) * 100}%` }}
+                />
+              </div>
+              <span className="font-mono text-xs font-medium">
+                {formatINRCompact(row.averageRevenuePaise / 100)}
+              </span>
             </div>
-            <span className="font-mono text-xs font-medium">
-              {row.averageRevenuePaise > 0 ? formatINRCompact(row.averageRevenuePaise / 100) : "—"}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
