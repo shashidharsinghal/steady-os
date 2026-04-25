@@ -723,6 +723,7 @@ export type Database = {
           aggregator_commission_paise: number | null;
           aggregator_fees_paise: number | null;
           aggregator_net_payout_paise: number | null;
+          settlement_status: Database["public"]["Enums"]["settlement_status"];
           payment_method: Database["public"]["Enums"]["payment_method"];
           payment_method_raw: string | null;
           customer_id: string | null;
@@ -763,6 +764,7 @@ export type Database = {
           aggregator_commission_paise?: number | null;
           aggregator_fees_paise?: number | null;
           aggregator_net_payout_paise?: number | null;
+          settlement_status?: Database["public"]["Enums"]["settlement_status"];
           payment_method: Database["public"]["Enums"]["payment_method"];
           payment_method_raw?: string | null;
           customer_id?: string | null;
@@ -803,6 +805,7 @@ export type Database = {
           aggregator_commission_paise?: number | null;
           aggregator_fees_paise?: number | null;
           aggregator_net_payout_paise?: number | null;
+          settlement_status?: Database["public"]["Enums"]["settlement_status"];
           payment_method?: Database["public"]["Enums"]["payment_method"];
           payment_method_raw?: string | null;
           customer_id?: string | null;
@@ -1532,6 +1535,7 @@ export type Database = {
       salary_change_reason: "joining" | "hike" | "demotion" | "correction";
       sales_channel: "dine_in" | "takeaway" | "swiggy" | "zomato" | "other";
       sales_status: "success" | "cancelled" | "refunded" | "partial";
+      settlement_status: "settled" | "pending" | "unknown";
       identity_kind: "phone_hash" | "upi_vpa" | "card_fingerprint";
       payment_method:
         | "cash"
