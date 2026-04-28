@@ -70,7 +70,7 @@ interface SwiggyPayoutRecord {
   totalTaxesPaise: number;
   netPayoutPaise: number;
   adjustmentsPaise: number;
-  adjustmentsDetail: Record<string, string | number | boolean | null> | null;
+  adjustmentsDetail: Array<Record<string, string | number | boolean | null>> | null;
   rawData: Record<string, string | number | boolean | null>;
 }
 
@@ -128,19 +128,110 @@ function parseSummaryPeriod(
     throw new IngestionError("invalid_date", "Could not determine the Swiggy payout period.");
   }
 
-  const periodStart = new Date(`${periodMatch[1]} ${periodMatch[2]} ${fallbackYear}`);
-  const periodEnd = new Date(`${periodMatch[3]} ${periodMatch[4]} ${fallbackYear}`);
-  const settlementDate = settlementText
-    ? new Date(`${stripExcelNoise(settlementText)} ${fallbackYear}`)
+  const monthIndex = (month: string) =>
+    [
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+    ].indexOf(month.toLowerCase());
+
+  const toIsoDate = (day: string, month: string) => {
+    const normalizedMonth = monthIndex(month);
+    if (normalizedMonth === -1) {
+      throw new IngestionError("invalid_date", `Could not parse month "${month}".`);
+    }
+
+    return `${fallbackYear}-${String(normalizedMonth + 1).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`;
+  };
+
+  const settlementMatch = settlementText
+    ? stripExcelNoise(settlementText).match(/(\d{1,2})\s+([A-Za-z]+)/)
     : null;
 
   return {
-    periodStart: periodStart.toISOString().slice(0, 10),
-    periodEnd: periodEnd.toISOString().slice(0, 10),
+    periodStart: toIsoDate(periodMatch[1]!, periodMatch[2]!),
+    periodEnd: toIsoDate(periodMatch[3]!, periodMatch[4]!),
     settlementDate:
-      settlementDate && !Number.isNaN(settlementDate.getTime())
-        ? settlementDate.toISOString().slice(0, 10)
-        : null,
+      settlementMatch != null ? toIsoDate(settlementMatch[1]!, settlementMatch[2]!) : null,
+  };
+}
+
+function parseOtherChargesAdjustments(
+  rows: Array<Array<string | number | boolean | Date | null>>
+): {
+  adjustmentsPaise: number;
+  adjustmentsDetail: Array<Record<string, string | number | boolean | null>> | null;
+} {
+  const headerRowIndex = rows.findIndex((row) =>
+    row.some((cell) => normalizeHeader(cell) === "adjustment type")
+  );
+  if (headerRowIndex === -1) {
+    return { adjustmentsPaise: 0, adjustmentsDetail: null };
+  }
+
+  const headers = rows[headerRowIndex] ?? [];
+  const normalizedHeaders = headers.map((header) => normalizeHeader(header));
+  const adjustmentTypeIndex = normalizedHeaders.indexOf("adjustment type");
+  const totalAmountIndex = normalizedHeaders.indexOf("total amount");
+  const settledAmountIndex = normalizedHeaders.indexOf("settled amount");
+  const outstandingAmountIndex = normalizedHeaders.indexOf("outstanding amount");
+  const periodFromIndex = normalizedHeaders.indexOf("period from");
+  const periodToIndex = normalizedHeaders.indexOf("period to");
+  const invoiceNumberIndex = normalizedHeaders.indexOf("invoice number");
+  const remarksIndex = normalizedHeaders.indexOf("remarks");
+
+  if (adjustmentTypeIndex === -1 || (settledAmountIndex === -1 && totalAmountIndex === -1)) {
+    return { adjustmentsPaise: 0, adjustmentsDetail: null };
+  }
+
+  const detail: Array<Record<string, string | number | boolean | null>> = [];
+  let adjustmentsPaise = 0;
+
+  for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] ?? [];
+    const adjustmentType = stripExcelNoise(row[adjustmentTypeIndex]);
+    if (!adjustmentType) continue;
+    if (adjustmentType.toLowerCase().includes("adjustments from previous week")) break;
+    if (adjustmentType.toLowerCase().includes("adjustments from previous week")) continue;
+    if (adjustmentType.toLowerCase().includes("total adjustments")) continue;
+
+    const amountValue =
+      settledAmountIndex !== -1 &&
+      row[settledAmountIndex] != null &&
+      stripExcelNoise(row[settledAmountIndex]) !== ""
+        ? row[settledAmountIndex]
+        : row[totalAmountIndex];
+
+    const amountPaise = parseMoneyToPaise(amountValue, "Adjustment Amount");
+    adjustmentsPaise += amountPaise;
+    detail.push({
+      adjustment_type: adjustmentType,
+      total_amount: totalAmountIndex !== -1 ? stripExcelNoise(row[totalAmountIndex]) || null : null,
+      settled_amount:
+        settledAmountIndex !== -1 ? stripExcelNoise(row[settledAmountIndex]) || null : null,
+      outstanding_amount:
+        outstandingAmountIndex !== -1 ? stripExcelNoise(row[outstandingAmountIndex]) || null : null,
+      period_from: periodFromIndex !== -1 ? stripExcelNoise(row[periodFromIndex]) || null : null,
+      period_to: periodToIndex !== -1 ? stripExcelNoise(row[periodToIndex]) || null : null,
+      invoice_number:
+        invoiceNumberIndex !== -1 ? stripExcelNoise(row[invoiceNumberIndex]) || null : null,
+      remarks: remarksIndex !== -1 ? stripExcelNoise(row[remarksIndex]) || null : null,
+      amount_paise: amountPaise,
+    });
+  }
+
+  return {
+    adjustmentsPaise,
+    adjustmentsDetail: detail.length > 0 ? detail : null,
   };
 }
 
@@ -169,10 +260,12 @@ export const swiggyAnnexureParser: Parser<SwiggyRawBundle, SwiggyCanonicalRecord
     const summarySheet = getSheetOrThrow(workbook, "Summary");
     const payoutSheet = getSheetOrThrow(workbook, "Payout Breakup");
     const orderSheet = getSheetOrThrow(workbook, "Order Level");
+    const adjustmentsSheet = workbook.Sheets["Other charges and deductions"] ?? null;
 
     const summaryRows = getSheetRows(summarySheet);
     const payoutRows = getSheetRows(payoutSheet);
     const orderRows = getSheetRows(orderSheet);
+    const adjustmentRows = adjustmentsSheet ? getSheetRows(adjustmentsSheet) : [];
 
     const orderHeaderIndex = findHeaderRow(orderRows as unknown[][], "order id");
     const orderHeaders = orderRows[orderHeaderIndex] ?? [];
@@ -284,6 +377,7 @@ export const swiggyAnnexureParser: Parser<SwiggyRawBundle, SwiggyCanonicalRecord
     }
     const fallbackYear = new Date(orders[0]?.orderedAt ?? Date.now()).getUTCFullYear();
     const summaryPeriod = parseSummaryPeriod(summaryRows, fallbackYear);
+    const { adjustmentsPaise, adjustmentsDetail } = parseOtherChargesAdjustments(adjustmentRows);
 
     const payoutRaw = normalizedRowObject(payoutHeader, payoutDataRows[0] ?? []);
     const payout: SwiggyPayoutRecord = {
@@ -352,8 +446,8 @@ export const swiggyAnnexureParser: Parser<SwiggyRawBundle, SwiggyCanonicalRecord
       tdsPaise: parseMoneyToPaise(payoutEntries.get("tds"), "TDS"),
       totalTaxesPaise: parseMoneyToPaise(payoutEntries.get("total taxes"), "Total Taxes"),
       netPayoutPaise: parseMoneyToPaise(payoutEntries.get("net payout"), "Net Payout"),
-      adjustmentsPaise: 0,
-      adjustmentsDetail: null,
+      adjustmentsPaise,
+      adjustmentsDetail,
       rawData: payoutRaw,
     };
 

@@ -42,43 +42,80 @@ function createParseContext(fileName: string) {
   };
 }
 
-function createSupabaseStub() {
-  const dataByTable = new Map<string, unknown[]>([
-    ["sales_orders", []],
-    ["payment_transactions", []],
-    ["aggregator_payouts", []],
-  ]);
+function createSupabaseStub(seed?: Record<string, unknown[]>) {
+  const dataByTable = new Map<string, unknown[]>(
+    Object.entries({
+      sales_orders: [],
+      payment_transactions: [],
+      aggregator_payouts: [],
+      ...seed,
+    })
+  );
 
   const builder = (table: string) => {
-    const rows = dataByTable.get(table) ?? [];
+    let selectedRows = [...(dataByTable.get(table) ?? [])];
 
     const chain = {
-      eq: () => chain,
-      neq: () => chain,
-      in: () => chain,
+      eq: (column: string, value: unknown) => {
+        selectedRows = selectedRows.filter(
+          (row) => (row as Record<string, unknown>)[column] === value
+        );
+        return chain;
+      },
+      neq: (column: string, value: unknown) => {
+        selectedRows = selectedRows.filter(
+          (row) => (row as Record<string, unknown>)[column] !== value
+        );
+        return chain;
+      },
+      in: (column: string, values: unknown[]) => {
+        selectedRows = selectedRows.filter((row) =>
+          values.includes((row as Record<string, unknown>)[column])
+        );
+        return chain;
+      },
       gte: () => chain,
       lte: () => chain,
       order: () => chain,
       select: () => chain,
       single: () =>
-        Promise.resolve({ data: null, error: { code: "PGRST116", message: "No rows" } }),
+        Promise.resolve(
+          selectedRows[0]
+            ? { data: selectedRows[0], error: null }
+            : { data: null, error: { code: "PGRST116", message: "No rows" } }
+        ),
       then: (resolvePromise: (value: { data: unknown; error: null }) => unknown) =>
-        Promise.resolve(resolvePromise({ data: rows, error: null })),
+        Promise.resolve(resolvePromise({ data: selectedRows, error: null })),
     };
 
     return {
       ...chain,
-      insert: () => chain,
-      upsert: () => chain,
-      update: () => chain,
-      delete: () => chain,
+      insert: (payload: unknown | unknown[]) => {
+        const nextRows = Array.isArray(payload) ? payload : [payload];
+        dataByTable.set(table, [...(dataByTable.get(table) ?? []), ...nextRows]);
+        selectedRows = [...(dataByTable.get(table) ?? [])];
+        return Promise.resolve({ data: nextRows, error: null });
+      },
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      update: () => Promise.resolve({ data: null, error: null }),
+      delete: () => ({
+        eq: (column: string, value: unknown) => {
+          const remaining = (dataByTable.get(table) ?? []).filter(
+            (row) => (row as Record<string, unknown>)[column] !== value
+          );
+          dataByTable.set(table, remaining);
+          selectedRows = [...remaining];
+          return Promise.resolve({ data: null, error: null });
+        },
+      }),
     };
   };
 
   return {
     from: (table: string) => builder(table),
     rpc: async () => ({ data: null, error: null }),
-  } as unknown as ParserSupabaseClient;
+    __dataByTable: dataByTable,
+  } as unknown as ParserSupabaseClient & { __dataByTable: Map<string, unknown[]> };
 }
 
 describe("sales ingestion fixtures", () => {
@@ -153,6 +190,64 @@ describe("sales ingestion fixtures", () => {
     expect(normalizeResult.toInsert.some((record) => record.kind === "payout")).toBe(true);
     expect(normalizeResult.toInsert.some((record) => record.kind === "order")).toBe(true);
     expect(parseResult.records[0]?.orders[0]?.aggregatorNetPayoutPaise).toBeGreaterThan(0);
+    expect(parseResult.records[0]?.payout.adjustmentsPaise).toBe(-281430);
+    expect(parseResult.records[0]?.payout.adjustmentsDetail).toHaveLength(1);
+    expect(parseResult.records[0]?.payout.adjustmentsDetail?.[0]).toMatchObject({
+      adjustment_type: "Cost Per Click - Ads",
+      invoice_number: "260325FS06003071",
+    });
+  });
+
+  it("commits and rolls back Swiggy annexure rows end-to-end", async () => {
+    const fileName = "invoice_Annexure_1342966_25032026_1774435563045.xlsx";
+    const { ctx } = createParseContext(fileName);
+    const parseResult = await swiggyAnnexureParser.parse(ctx);
+    const supabase = createSupabaseStub();
+
+    const normalizeResult = await swiggyAnnexureParser.normalize({
+      runId: "swiggy-run",
+      outletId: "outlet-elan",
+      records: parseResult.records,
+      supabase,
+    });
+
+    await swiggyAnnexureParser.commit({
+      runId: "swiggy-run",
+      outletId: "outlet-elan",
+      records: normalizeResult.toInsert,
+      committedBy: "partner-user",
+      supabase,
+    });
+
+    const insertedOrders = (supabase.__dataByTable.get("sales_orders") ?? []) as Array<
+      Record<string, unknown>
+    >;
+    const insertedPayouts = (supabase.__dataByTable.get("aggregator_payouts") ?? []) as Array<
+      Record<string, unknown>
+    >;
+
+    expect(insertedOrders.length).toBe(17);
+    expect(insertedOrders[0]).toMatchObject({
+      outlet_id: "outlet-elan",
+      source: "swiggy",
+      channel: "swiggy",
+      settlement_status: "settled",
+    });
+    expect(insertedPayouts).toHaveLength(1);
+    expect(insertedPayouts[0]).toMatchObject({
+      source: "swiggy",
+      period_start: "2026-03-15",
+      period_end: "2026-03-21",
+      adjustments_paise: -281430,
+    });
+
+    await swiggyAnnexureParser.rollback({
+      runId: "swiggy-run",
+      supabase,
+    });
+
+    expect(supabase.__dataByTable.get("sales_orders")).toHaveLength(0);
+    expect(supabase.__dataByTable.get("aggregator_payouts")).toHaveLength(0);
   });
 
   it("keeps the taco PDF outside the spreadsheet ingestion path", () => {

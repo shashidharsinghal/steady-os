@@ -77,7 +77,11 @@ export function parseMoneyToPaise(value: unknown, fieldName: string): number {
     return Math.round(value * 100);
   }
 
-  const normalized = stripExcelNoise(value).replace(/,/g, "");
+  const normalized = stripExcelNoise(value)
+    .replace(/,/g, "")
+    .replace(/₹/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[^0-9.-]/g, "");
   const parsed = Number(normalized);
 
   if (!Number.isFinite(parsed)) {
