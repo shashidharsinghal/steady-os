@@ -3,6 +3,14 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ParserSupabaseClient } from "../../../packages/ingestion/src/types/parser";
 import { petpoojaDayWiseParser } from "../../../packages/ingestion/src/parsers/petpoojaDayWise";
+import {
+  buildItemWorkbook,
+  buildItemWorkbookOnAlternateSheet,
+  buildItemWorkbookWithExcelDates,
+  petpoojaItemBillParser,
+  petpoojaPaymentSummaryParser,
+  type PetpoojaItemBillRecord,
+} from "../../../packages/ingestion/src/parsers/petpoojaDaily";
 import { petpoojaOrdersMasterParser } from "../../../packages/ingestion/src/parsers/petpoojaOrdersMaster";
 import { pineLabsPosParser } from "../../../packages/ingestion/src/parsers/pineLabsPos";
 import { swiggyAnnexureParser } from "../../../packages/ingestion/src/parsers/swiggyAnnexure";
@@ -46,6 +54,8 @@ function createSupabaseStub(seed?: Record<string, unknown[]>) {
   const dataByTable = new Map<string, unknown[]>(
     Object.entries({
       sales_orders: [],
+      sales_line_items: [],
+      sales_payment_splits: [],
       payment_transactions: [],
       aggregator_payouts: [],
       ...seed,
@@ -91,7 +101,19 @@ function createSupabaseStub(seed?: Record<string, unknown[]>) {
     return {
       ...chain,
       insert: (payload: unknown | unknown[]) => {
-        const nextRows = Array.isArray(payload) ? payload : [payload];
+        const nextRows = (Array.isArray(payload) ? payload : [payload]).map((row, index) => {
+          if (
+            typeof row === "object" &&
+            row != null &&
+            !("id" in row) &&
+            (table === "sales_orders" ||
+              table === "sales_line_items" ||
+              table === "sales_payment_splits")
+          ) {
+            return { id: `${table}-${Date.now()}-${index}`, ...row };
+          }
+          return row;
+        });
         dataByTable.set(table, [...(dataByTable.get(table) ?? []), ...nextRows]);
         selectedRows = [...(dataByTable.get(table) ?? [])];
         return Promise.resolve({ data: nextRows, error: null });
@@ -119,6 +141,206 @@ function createSupabaseStub(seed?: Record<string, unknown[]>) {
 }
 
 describe("sales ingestion fixtures", () => {
+  const dailyItemRows: PetpoojaItemBillRecord[] = [
+    {
+      rowNumber: 6,
+      businessDate: "2026-04-28",
+      invoiceNo: "808",
+      orderedAt: "2026-04-28T15:58:00.000Z",
+      serverName: "biller",
+      tableNo: "",
+      covers: 0,
+      category: "Tandoori Starters",
+      itemName: "Maharaja Malai Chaap (Full)",
+      variation: "Full",
+      quantity: 2,
+      unitPricePaise: 42950,
+      subTotalPaise: 85900,
+      discountPaise: 0,
+      taxPaise: 0,
+      lineTotalPaise: 85900,
+      rawData: { hsn_code: "996331" },
+    },
+    {
+      rowNumber: 7,
+      businessDate: "2026-04-28",
+      invoiceNo: "810",
+      orderedAt: "2026-04-28T16:10:00.000Z",
+      serverName: "biller",
+      tableNo: "T1",
+      covers: 2,
+      category: "Breads & Extras",
+      itemName: "Roomali Roti",
+      variation: null,
+      quantity: 4,
+      unitPricePaise: 4000,
+      subTotalPaise: 16000,
+      discountPaise: 0,
+      taxPaise: 0,
+      lineTotalPaise: 16000,
+      rawData: { hsn_code: "996331" },
+    },
+  ];
+
+  function dailyItemBuffer() {
+    return buildItemWorkbook(dailyItemRows);
+  }
+
+  function dailyItemBufferWithExcelDates() {
+    return buildItemWorkbookWithExcelDates([dailyItemRows[0]!]);
+  }
+
+  function dailyItemBufferOnAlternateSheet() {
+    return buildItemWorkbookOnAlternateSheet([dailyItemRows[0]!]);
+  }
+
+  function dailyPaymentBuffer() {
+    return Buffer.from(`<html><body><table>
+        <tr><td>Date</td><td>2026-04-28 to 2026-04-28</td></tr>
+        <tr><td>Name</td><td>Payment Wise Summary</td></tr>
+        <tr><td>Restaurant Name</td><td>Test Outlet</td></tr>
+        <tr><td></td></tr>
+        <tr><td>Invoice No.</td><td>Date</td><td>Payment Type</td><td>Order Type</td><td>Status</td><td>Persons</td><td>Area</td><td>Assign To</td><td>Not Paid</td><td>Cash</td><td>Card</td><td>Due Payment</td><td>Other</td><td>Wallet</td><td>UPI</td><td>Online</td></tr>
+        <tr><td>808</td><td>28-04-2026</td><td>Cash</td><td>Delivery(Parcel)</td><td>Success</td><td>0</td><td>Parcel</td><td></td><td>0</td><td>1219</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+        <tr><td>809</td><td>28-04-2026</td><td>UPI</td><td>Dine In</td><td>Cancelled</td><td>2</td><td></td><td></td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>230</td><td>0</td></tr>
+        <tr><td>810</td><td>28-04-2026</td><td>Online</td><td>Delivery(Parcel)</td><td>Success</td><td>0</td><td>Zomato</td><td></td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>272</td></tr>
+        <tr><td>Total</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>0</td><td>1219</td><td>0</td><td>0</td><td>0</td><td>0</td><td>230</td><td>272</td></tr>
+      </table></body></html>`);
+  }
+
+  it("detects and parses Petpooja daily item and payment reports", async () => {
+    const itemBuffer = dailyItemBuffer();
+    const paymentBuffer = dailyPaymentBuffer();
+
+    expect(
+      (
+        await petpoojaItemBillParser.detect({
+          fileName: "Item_bill_report_2026_04_28_22_30_00.xlsx",
+          fileSize: itemBuffer.byteLength,
+          sampleBuffer: itemBuffer.subarray(0, 50 * 1024),
+        })
+      ).confidence
+    ).toBeGreaterThan(0.7);
+    expect(
+      (
+        await petpoojaPaymentSummaryParser.detect({
+          fileName: "payment_wise_summary_2026_04_28_22_30_00.xls",
+          fileSize: paymentBuffer.byteLength,
+          sampleBuffer: paymentBuffer.subarray(0, 50 * 1024),
+        })
+      ).confidence
+    ).toBeGreaterThan(0.7);
+
+    const itemResult = await petpoojaItemBillParser.parse({
+      runId: "item-run",
+      outletId: "outlet-elan",
+      filePath: "Item_bill_report_2026_04_28_22_30_00.xlsx",
+      fileBuffer: itemBuffer,
+      recordError: () => undefined,
+    });
+    const paymentResult = await petpoojaPaymentSummaryParser.parse({
+      runId: "payment-run",
+      outletId: "outlet-elan",
+      filePath: "payment_wise_summary_2026_04_28_22_30_00.xls",
+      fileBuffer: paymentBuffer,
+      recordError: () => undefined,
+    });
+
+    expect(itemResult.records).toHaveLength(2);
+    expect(itemResult.records[0]?.itemName).toBe("Maharaja Malai Chaap (Full)");
+    expect(paymentResult.records).toHaveLength(3);
+    expect(paymentResult.records.filter((row) => row.status === "cancelled")).toHaveLength(1);
+    expect(paymentResult.records.find((row) => row.invoiceNo === "810")?.channel).toBe("zomato");
+    expect(paymentResult.records.find((row) => row.invoiceNo === "810")?.settlementStatus).toBe(
+      "pending"
+    );
+  });
+
+  it("parses Petpooja item reports when date cells are native Excel dates", async () => {
+    const errors: Array<{ rowNumber: number; errorCode: string; errorMessage: string }> = [];
+    const result = await petpoojaItemBillParser.parse({
+      runId: "item-date-run",
+      outletId: "outlet-elan",
+      filePath: "Item_bill_report_2026_04_29_01_56_15.xlsx",
+      fileBuffer: dailyItemBufferWithExcelDates(),
+      recordError: (error) => errors.push(error),
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]?.invoiceNo).toBe("808");
+    expect(result.records[0]?.quantity).toBe(2);
+    expect(errors).toEqual([]);
+  });
+
+  it("falls back to the matching worksheet when the sheet name is not exactly Report", async () => {
+    const errors: Array<{ rowNumber: number; errorCode: string; errorMessage: string }> = [];
+    const result = await petpoojaItemBillParser.parse({
+      runId: "item-sheet-run",
+      outletId: "outlet-elan",
+      filePath: "Item_bill_report_2026_04_29_01_56_15.xlsx",
+      fileBuffer: dailyItemBufferOnAlternateSheet(),
+      recordError: (error) => errors.push(error),
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]?.invoiceNo).toBe("808");
+    expect(errors).toEqual([]);
+  });
+
+  it("commits Petpooja daily orders, payment splits, and linked line items", async () => {
+    const supabase = createSupabaseStub();
+    const paymentResult = await petpoojaPaymentSummaryParser.parse({
+      runId: "payment-run",
+      outletId: "outlet-elan",
+      filePath: "payment_wise_summary_2026_04_28_22_30_00.xls",
+      fileBuffer: dailyPaymentBuffer(),
+      recordError: () => undefined,
+    });
+    const paymentNormalize = await petpoojaPaymentSummaryParser.normalize({
+      runId: "payment-run",
+      outletId: "outlet-elan",
+      records: paymentResult.records,
+      supabase,
+    });
+    await petpoojaPaymentSummaryParser.commit({
+      runId: "payment-run",
+      outletId: "outlet-elan",
+      records: paymentNormalize.toInsert,
+      committedBy: "partner-user",
+      supabase,
+    });
+
+    const itemResult = await petpoojaItemBillParser.parse({
+      runId: "item-run",
+      outletId: "outlet-elan",
+      filePath: "Item_bill_report_2026_04_28_22_30_00.xlsx",
+      fileBuffer: dailyItemBuffer(),
+      recordError: () => undefined,
+    });
+    const itemNormalize = await petpoojaItemBillParser.normalize({
+      runId: "item-run",
+      outletId: "outlet-elan",
+      records: itemResult.records,
+      supabase,
+    });
+    await petpoojaItemBillParser.commit({
+      runId: "item-run",
+      outletId: "outlet-elan",
+      records: itemNormalize.toInsert,
+      committedBy: "partner-user",
+      supabase,
+    });
+
+    expect(supabase.__dataByTable.get("sales_orders")).toHaveLength(3);
+    expect(supabase.__dataByTable.get("sales_payment_splits")).toHaveLength(3);
+    expect(supabase.__dataByTable.get("sales_line_items")).toHaveLength(2);
+    expect(
+      (supabase.__dataByTable.get("sales_payment_splits") ?? []).find(
+        (row) => (row as Record<string, unknown>).method === "upi"
+      )
+    ).toMatchObject({ amount_paise: 23000 });
+  });
+
   it("detects and parses Petpooja Orders Master", async () => {
     const fileName = "Orders_Master_Report_2026_04_06_12_46_26.xlsx";
     const detectResult = await petpoojaOrdersMasterParser.detect(createDetectContext(fileName));

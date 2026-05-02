@@ -176,6 +176,26 @@ Spec: `docs/features/pnl-ingestion.md`
 - `/pnl/[id]` shows trading account, expense breakdown, bottom line, and month-over-month deltas when prior history exists
 - Soft delete matches the ingestion pattern; `purge_deleted_runs()` now also purges aged P&L reports and frees dedup hashes after purge
 
+### Petpooja Daily Sales Ingestion
+
+Spec: `docs/features/petpooja-daily-ingestion.md`
+
+- Added paired Petpooja daily parsers for item-wise bill `.xlsx` files and payment-wise summary `.xls` files
+- Item reports write `sales_line_items`; payment summaries write `sales_orders` plus `sales_payment_splits`, joined by invoice number and business date
+- `/ingest` supports paired preview-first uploads while preserving the original single-file manual drag-drop path
+- `ingestion_runs.trigger_source` tracks manual uploads versus Gmail-driven runs, and delete/rollback flows continue to work consistently across all trigger sources
+- Dashboard item and payment sections now light up from the Petpooja daily canonical tables
+
+### Gmail Auto-Ingest (`/ingest`)
+
+Spec: `docs/features/gmail-auto-ingest.md`
+
+- Partners can connect one read-only Gmail inbox per outlet using `gmail.readonly` OAuth and re-authorize when personal Gmail testing tokens expire
+- Nightly Vercel cron routes poll for new Petpooja report emails, verify the sender domain, deduplicate by Gmail message id, and feed attachments through the existing ingestion pipeline
+- Auto-commit only proceeds when parser confidence is high, row-level parse errors are zero, and row counts stay within the rolling baseline; otherwise preview-ready runs are left for review and an alert webhook can be triggered
+- `/ingest` now shows Gmail connection state, sync history, manual "Sync now", and oldest-first date-range backfill alongside the unchanged manual upload area
+- Missed days are naturally recovered after re-auth because sync resumes from the last successful sync watermark and skips already processed message ids
+
 ### Design System
 
 Spec: `docs/features/design-system.md`

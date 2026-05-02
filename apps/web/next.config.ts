@@ -5,7 +5,12 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
   : null;
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@stride-os/ui", "@stride-os/shared"],
+  transpilePackages: [
+    "@stride-os/db",
+    "@stride-os/ingestion",
+    "@stride-os/shared",
+    "@stride-os/ui",
+  ],
   images: {
     remotePatterns: supabaseHost
       ? [

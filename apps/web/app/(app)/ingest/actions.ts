@@ -2,8 +2,23 @@
 
 import { createHash } from "crypto";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requirePartner } from "@/lib/auth";
+import {
+  buildGmailAuthUrl,
+  createCsrfToken,
+  encodeGmailOAuthState,
+  GMAIL_OAUTH_CSRF_COOKIE,
+  hashCsrfToken,
+  revokeGoogleToken,
+} from "@/lib/gmail/oauth";
+import {
+  listGmailSyncHistory,
+  syncGmailForOutlet,
+  type GmailSyncHistoryRow,
+  type SyncResult,
+} from "@/lib/gmail/sync";
 import { getAllParsers, getParser, IngestionError } from "@stride-os/ingestion";
 import type { DetectionMethod } from "@stride-os/ingestion";
 import type { ParserSupabaseClient } from "@stride-os/ingestion";
@@ -11,6 +26,18 @@ import { resolveDocumentTypeSourceType } from "./_lib/document-types";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = ["xlsx", "xls", "csv", "pdf"];
+type TriggerSource = "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
+
+export type GmailConnectionStatus = {
+  state: "connected" | "expired" | "revoked" | "error" | "disconnected";
+  gmailAddress: string | null;
+  tokenExpiresAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+};
+
+export type GmailSyncHistory = GmailSyncHistoryRow;
 
 function revalidateOperationalSurfaces() {
   revalidatePath("/ingest");
@@ -20,6 +47,150 @@ function revalidateOperationalSurfaces() {
   revalidatePath("/customers/lapsed");
   revalidatePath("/customers/merges");
   revalidatePath("/customers/segments");
+}
+
+// ─── Gmail OAuth ─────────────────────────────────────────────────────────────
+
+export async function connectGmail(outletId: string): Promise<{ authUrl: string }> {
+  const userId = await requirePartner();
+  if (!outletId) throw new Error("Select an outlet before connecting Gmail.");
+
+  const csrfToken = createCsrfToken();
+  const cookieStore = await cookies();
+  cookieStore.set(GMAIL_OAUTH_CSRF_COOKIE, csrfToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60,
+    path: "/",
+  });
+
+  const state = encodeGmailOAuthState({
+    outletId,
+    userId,
+    csrfTokenHash: hashCsrfToken(csrfToken),
+  });
+
+  return { authUrl: buildGmailAuthUrl({ state }) };
+}
+
+export async function getGmailConnectionStatus(outletId: string): Promise<GmailConnectionStatus> {
+  await requirePartner();
+  if (!outletId) {
+    return {
+      state: "disconnected",
+      gmailAddress: null,
+      tokenExpiresAt: null,
+      lastSyncAt: null,
+      lastSyncStatus: null,
+      lastSyncError: null,
+    };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("gmail_connections")
+    .select(
+      "gmail_address, token_expires_at, status, last_sync_at, last_sync_status, last_sync_error"
+    )
+    .eq("outlet_id", outletId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) {
+    return {
+      state: "disconnected",
+      gmailAddress: null,
+      tokenExpiresAt: null,
+      lastSyncAt: null,
+      lastSyncStatus: null,
+      lastSyncError: null,
+    };
+  }
+
+  const state =
+    data.status === "active" ? "connected" : (data.status as GmailConnectionStatus["state"]);
+
+  return {
+    state,
+    gmailAddress: data.gmail_address,
+    tokenExpiresAt: data.token_expires_at,
+    lastSyncAt: data.last_sync_at,
+    lastSyncStatus: data.last_sync_status,
+    lastSyncError: data.last_sync_error,
+  };
+}
+
+export async function disconnectGmail(outletId: string): Promise<void> {
+  await requirePartner();
+  if (!outletId) throw new Error("Select an outlet before disconnecting Gmail.");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("gmail_connections")
+    .select("id, refresh_token, access_token")
+    .eq("outlet_id", outletId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return;
+
+  const tokenToRevoke = data.refresh_token ?? data.access_token;
+  if (tokenToRevoke) {
+    await revokeGoogleToken(tokenToRevoke);
+  }
+
+  const { error: updateError } = await supabase
+    .from("gmail_connections")
+    .update({
+      status: "revoked",
+      access_token: null,
+      refresh_token: null,
+      token_expires_at: null,
+      last_sync_error: null,
+    })
+    .eq("id", data.id);
+
+  if (updateError) throw new Error(updateError.message);
+  revalidatePath("/ingest");
+}
+
+export async function triggerGmailSync(outletId: string): Promise<SyncResult> {
+  const userId = await requirePartner();
+  if (!outletId) throw new Error("Select an outlet before starting a Gmail sync.");
+
+  return syncGmailForOutlet({
+    outletId,
+    triggeredBy: "manual",
+    triggerSource: "gmail_manual",
+    requestedByUserId: userId,
+  });
+}
+
+export async function triggerGmailBackfillDay(
+  outletId: string,
+  businessDate: string
+): Promise<SyncResult> {
+  const userId = await requirePartner();
+  if (!outletId) throw new Error("Select an outlet before running a backfill.");
+  if (!businessDate) throw new Error("Choose a business date to backfill.");
+
+  return syncGmailForOutlet({
+    outletId,
+    businessDate,
+    triggeredBy: "backfill",
+    triggerSource: "gmail_backfill",
+    requestedByUserId: userId,
+  });
+}
+
+export async function getGmailSyncHistory(
+  outletId: string,
+  limit = 14
+): Promise<GmailSyncHistory[]> {
+  await requirePartner();
+  if (!outletId) return [];
+  return listGmailSyncHistory(outletId, limit);
 }
 
 async function deleteRunArtifacts(
@@ -35,6 +206,13 @@ async function deleteRunArtifacts(
     .in("ingestion_run_id", uniqueRunIds);
 
   if (pnlDeleteError) throw new Error(pnlDeleteError.message);
+
+  const { error: splitDeleteError } = await supabase
+    .from("sales_payment_splits")
+    .delete()
+    .in("ingestion_run_id", uniqueRunIds);
+
+  if (splitDeleteError) throw new Error(splitDeleteError.message);
 }
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
@@ -58,6 +236,11 @@ export async function uploadFile(formData: FormData): Promise<{ runId: string }>
   const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
   const selectedDocumentType = (formData.get("document_type") as string | null) ?? "auto_detect";
   const manualSourceType = resolveDocumentTypeSourceType(selectedDocumentType);
+  const triggerSource = ((formData.get("trigger_source") as string | null) ??
+    "manual_upload") as TriggerSource;
+  if (!["manual_upload", "gmail_auto", "gmail_manual", "gmail_backfill"].includes(triggerSource)) {
+    throw new Error("Unsupported ingestion trigger source.");
+  }
 
   // Classify using registered parsers
   const sampleBuffer = fileBuffer.subarray(0, 50 * 1024);
@@ -123,6 +306,7 @@ export async function uploadFile(formData: FormData): Promise<{ runId: string }>
     file_mime_type: file.type || null,
     file_storage_path: storagePath,
     file_sha256: sha256,
+    trigger_source: triggerSource,
     status: "uploaded",
   });
 
@@ -138,6 +322,41 @@ export async function uploadFile(formData: FormData): Promise<{ runId: string }>
 
   revalidateOperationalSurfaces();
   return { runId };
+}
+
+export async function uploadPairedPetpoojaReports(
+  formData: FormData
+): Promise<{ itemRunId: string; paymentRunId: string }> {
+  await requirePartner();
+  const itemFile = formData.get("item_file") as File | null;
+  const paymentFile = formData.get("payment_file") as File | null;
+
+  if (!itemFile && !paymentFile) throw new Error("Choose at least one Petpooja daily report.");
+
+  const outletId = (formData.get("outlet_id") as string | null) ?? "";
+  if (!outletId) throw new Error("Select an outlet before uploading Petpooja reports.");
+
+  const uploadOne = async (file: File, documentType: string) => {
+    const single = new FormData();
+    single.append("file", file);
+    single.append("outlet_id", outletId);
+    single.append("document_type", documentType);
+    single.append("trigger_source", "manual_upload");
+    return uploadFile(single);
+  };
+
+  const [itemResult, paymentResult] = await Promise.all([
+    itemFile ? uploadOne(itemFile, "petpooja_item_bill") : Promise.resolve(null),
+    paymentFile ? uploadOne(paymentFile, "petpooja_payment_summary") : Promise.resolve(null),
+  ]);
+
+  if (itemResult) await parseRun(itemResult.runId, "petpooja_item_bill");
+  if (paymentResult) await parseRun(paymentResult.runId, "petpooja_payment_summary");
+
+  return {
+    itemRunId: itemResult?.runId ?? "",
+    paymentRunId: paymentResult?.runId ?? "",
+  };
 }
 
 // ─── Parse ───────────────────────────────────────────────────────────────────
@@ -310,8 +529,22 @@ export async function commitRun(runId: string): Promise<void> {
         rows_to_insert: result.rowsInserted,
       })
       .eq("id", runId);
+
+    if (run.source_type === "petpooja_payment_summary") {
+      await commitMatchingPetpoojaItemRun({
+        supabase,
+        parserSupabase,
+        paymentRun: run,
+        userId,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "An unexpected error occurred.";
+    try {
+      await parser.rollback({ runId, supabase: parserSupabase });
+    } catch {
+      // Best-effort cleanup keeps partially written parser rows from lingering after a failed commit.
+    }
     await supabase
       .from("ingestion_runs")
       .update({
@@ -325,6 +558,82 @@ export async function commitRun(runId: string): Promise<void> {
 
   revalidatePath(`/ingest/${runId}`);
   revalidateOperationalSurfaces();
+}
+
+async function commitMatchingPetpoojaItemRun({
+  supabase,
+  parserSupabase,
+  paymentRun,
+  userId,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  parserSupabase: ParserSupabaseClient;
+  paymentRun: {
+    id: string;
+    outlet_id: string | null;
+    preview_payload: unknown;
+  };
+  userId: string;
+}) {
+  const payload = paymentRun.preview_payload as { businessDate?: string | null } | null;
+  if (!paymentRun.outlet_id || !payload?.businessDate) return;
+
+  const { data: itemRuns, error } = await supabase
+    .from("ingestion_runs")
+    .select("*")
+    .eq("outlet_id", paymentRun.outlet_id)
+    .eq("source_type", "petpooja_item_bill")
+    .eq("status", "preview_ready")
+    .is("deleted_at", null)
+    .order("uploaded_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const match = ((itemRuns ?? []) as Array<Record<string, unknown>>).find((candidate) => {
+    const candidatePayload = candidate.preview_payload as { businessDate?: string | null } | null;
+    return candidatePayload?.businessDate === payload.businessDate;
+  });
+
+  if (!match) return;
+
+  const parser = getParser("petpooja_item_bill");
+  if (!parser) throw new Error("No parser available for Petpooja item bill reports.");
+
+  const rawRecords = ((match.preview_payload as { rawRecords?: unknown[] } | null)?.rawRecords ??
+    []) as unknown[];
+  const normalizeResult = await parser.normalize({
+    runId: match.id as string,
+    outletId: paymentRun.outlet_id,
+    records: rawRecords,
+    supabase: parserSupabase,
+  });
+
+  await supabase
+    .from("ingestion_runs")
+    .update({ status: "committing", committing_started_at: new Date().toISOString() })
+    .eq("id", match.id as string);
+
+  const itemResult = await parser.commit({
+    runId: match.id as string,
+    outletId: paymentRun.outlet_id,
+    records: normalizeResult.toInsert,
+    committedBy: userId,
+    supabase: parserSupabase,
+  });
+
+  await supabase
+    .from("ingestion_runs")
+    .update({
+      status: "committed",
+      committed_at: new Date().toISOString(),
+      committed_by: userId,
+      rows_to_insert: itemResult.rowsInserted,
+      rows_duplicate: normalizeResult.duplicateCount,
+      preview_payload: normalizeResult.previewPayload as unknown as import("@stride-os/db").Json,
+    })
+    .eq("id", match.id as string);
+
+  revalidatePath(`/ingest/${match.id as string}`);
 }
 
 // ─── Cancel ──────────────────────────────────────────────────────────────────
@@ -478,6 +787,7 @@ export async function deleteRuns(runIds: string[]): Promise<void> {
 export type DeleteImpact = {
   totals: {
     salesOrders: number;
+    salesPaymentSplits: number;
     paymentTransactions: number;
     aggregatorPayouts: number;
   };
@@ -485,6 +795,7 @@ export type DeleteImpact = {
     runId: string;
     fileName: string;
     salesOrders: number;
+    salesPaymentSplits: number;
     paymentTransactions: number;
     aggregatorPayouts: number;
   }>;
@@ -500,29 +811,43 @@ export async function getDeleteImpact(runIds: string[]): Promise<DeleteImpact> {
   const uniqueRunIds = Array.from(new Set(runIds)).filter(Boolean);
   if (uniqueRunIds.length === 0) {
     return {
-      totals: { salesOrders: 0, paymentTransactions: 0, aggregatorPayouts: 0 },
+      totals: {
+        salesOrders: 0,
+        salesPaymentSplits: 0,
+        paymentTransactions: 0,
+        aggregatorPayouts: 0,
+      },
       runs: [],
       customerImpact: { keptCustomers: 0, removedCustomers: 0 },
     };
   }
 
   const supabase = await createClient();
-  const [{ data: runs }, { data: orderRows }, { data: paymentRows }, { data: payoutRows }] =
-    await Promise.all([
-      supabase.from("ingestion_runs").select("id, file_name").in("id", uniqueRunIds),
-      supabase
-        .from("sales_orders")
-        .select("id, ingestion_run_id, customer_id")
-        .in("ingestion_run_id", uniqueRunIds),
-      supabase
-        .from("payment_transactions")
-        .select("id, ingestion_run_id, customer_id")
-        .in("ingestion_run_id", uniqueRunIds),
-      supabase
-        .from("aggregator_payouts")
-        .select("id, ingestion_run_id")
-        .in("ingestion_run_id", uniqueRunIds),
-    ]);
+  const [
+    { data: runs },
+    { data: orderRows },
+    { data: splitRows },
+    { data: paymentRows },
+    { data: payoutRows },
+  ] = await Promise.all([
+    supabase.from("ingestion_runs").select("id, file_name").in("id", uniqueRunIds),
+    supabase
+      .from("sales_orders")
+      .select("id, ingestion_run_id, customer_id")
+      .in("ingestion_run_id", uniqueRunIds),
+    supabase
+      .from("sales_payment_splits")
+      .select("id, ingestion_run_id")
+      .in("ingestion_run_id", uniqueRunIds),
+    supabase
+      .from("payment_transactions")
+      .select("id, ingestion_run_id, customer_id")
+      .in("ingestion_run_id", uniqueRunIds),
+    supabase
+      .from("aggregator_payouts")
+      .select("id, ingestion_run_id")
+      .in("ingestion_run_id", uniqueRunIds),
+  ]);
 
   const runMap = new Map(
     ((runs ?? []) as Array<{ id: string; file_name: string }>).map((run) => [
@@ -531,6 +856,7 @@ export async function getDeleteImpact(runIds: string[]): Promise<DeleteImpact> {
         runId: run.id,
         fileName: run.file_name,
         salesOrders: 0,
+        salesPaymentSplits: 0,
         paymentTransactions: 0,
         aggregatorPayouts: 0,
       },
@@ -552,6 +878,10 @@ export async function getDeleteImpact(runIds: string[]): Promise<DeleteImpact> {
       if (row.customer_id) selectedCustomerIds.add(row.customer_id);
     }
   );
+  ((splitRows ?? []) as Array<{ ingestion_run_id: string }>).forEach((row) => {
+    const current = runMap.get(row.ingestion_run_id);
+    if (current) current.salesPaymentSplits += 1;
+  });
   ((payoutRows ?? []) as Array<{ ingestion_run_id: string }>).forEach((row) => {
     const current = runMap.get(row.ingestion_run_id);
     if (current) current.aggregatorPayouts += 1;
@@ -600,6 +930,7 @@ export async function getDeleteImpact(runIds: string[]): Promise<DeleteImpact> {
   return {
     totals: {
       salesOrders: runRows.reduce((sum, row) => sum + row.salesOrders, 0),
+      salesPaymentSplits: runRows.reduce((sum, row) => sum + row.salesPaymentSplits, 0),
       paymentTransactions: runRows.reduce((sum, row) => sum + row.paymentTransactions, 0),
       aggregatorPayouts: runRows.reduce((sum, row) => sum + row.aggregatorPayouts, 0),
     },

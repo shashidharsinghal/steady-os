@@ -22,6 +22,20 @@ export const INGEST_DOCUMENT_TYPE_OPTIONS: IngestDocumentTypeOption[] = [
     available: true,
   },
   {
+    value: "petpooja_item_bill",
+    label: "Petpooja item bill",
+    description: "Daily Item Wise Bill report with invoice-level line items.",
+    sourceType: "petpooja_item_bill",
+    available: true,
+  },
+  {
+    value: "petpooja_payment_summary",
+    label: "Petpooja payment summary",
+    description: "Daily Payment Wise Summary HTML .xls report with cancellations and splits.",
+    sourceType: "petpooja_payment_summary",
+    available: true,
+  },
+  {
     value: "pnl_report",
     label: "P&L",
     description: "Monthly franchise profit and loss PDF.",
@@ -74,6 +88,8 @@ export const INGEST_DOCUMENT_TYPE_OPTIONS: IngestDocumentTypeOption[] = [
 
 export const INGEST_SOURCE_PICKER_OPTIONS = [
   { sourceType: "petpooja_orders_master", displayName: "Sales report" },
+  { sourceType: "petpooja_item_bill", displayName: "Petpooja Item Wise Bill Report" },
+  { sourceType: "petpooja_payment_summary", displayName: "Petpooja Payment Wise Summary" },
   { sourceType: "petpooja_day_wise", displayName: "Petpooja Day-Wise Summary" },
   { sourceType: "pine_labs_pos", displayName: "Pine Labs report" },
   { sourceType: "swiggy_annexure", displayName: "Swiggy report" },

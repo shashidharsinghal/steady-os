@@ -21,6 +21,7 @@ import {
   DeleteRunButton,
 } from "../_components/RunActions";
 import { PnlPreviewCard } from "../_components/PnlPreviewCard";
+import { PetpoojaDailyPreviewCard } from "../_components/PetpoojaDailyPreviewCard";
 import type { Tables } from "@stride-os/db";
 import type { IngestionStatus } from "@stride-os/ingestion";
 
@@ -90,6 +91,13 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
         <PnlPreviewCard
           runId={typedRun.id}
           payload={previewPayload as Parameters<typeof PnlPreviewCard>[0]["payload"]}
+        />
+      ) : null}
+      {(typedRun.source_type === "petpooja_item_bill" ||
+        typedRun.source_type === "petpooja_payment_summary") &&
+      previewPayload ? (
+        <PetpoojaDailyPreviewCard
+          payload={previewPayload as Parameters<typeof PetpoojaDailyPreviewCard>[0]["payload"]}
         />
       ) : null}
 

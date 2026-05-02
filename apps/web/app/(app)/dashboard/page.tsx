@@ -1,7 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Upload } from "lucide-react";
-import { Button, Card, CardContent } from "@stride-os/ui";
+import { Button, Card, CardContent, Skeleton } from "@stride-os/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
 import { MorningCheckSection } from "./_components/MorningCheckSection";
@@ -9,15 +10,91 @@ import { PeriodViewSection } from "./_components/PeriodViewSection";
 import { ChannelEconomicsSection } from "./_components/ChannelEconomicsSection";
 import { DiscountPerformanceSection } from "./_components/DiscountPerformanceSection";
 import { CustomerTilesSection } from "./_components/CustomerTilesSection";
+import { PetpoojaDailySection } from "./_components/PetpoojaDailySection";
 import {
   chooseDashboardOutlet,
   getChannelEconomics,
   getCustomerTiles,
   getDiscountPerformance,
+  getItemPerformance,
   getMorningCheck,
+  getPaymentMethodBreakdown,
   getPeriodView,
   resolveDashboardPeriod,
+  type DashboardPeriod,
 } from "./_lib/dashboard";
+
+// Each section is fetched + rendered in its own async server component so that
+// `<Suspense>` can stream them individually. Previously the page awaited all 7
+// queries with `Promise.all` and only painted once the slowest one returned —
+// users stared at the route-level skeleton for several seconds even though the
+// morning check (the most important section) was usually ready first.
+
+async function PeriodViewLoader({
+  outletId,
+  period,
+  compare,
+}: {
+  outletId: string;
+  period: DashboardPeriod;
+  compare: boolean;
+}) {
+  const data = await getPeriodView(outletId, period, compare);
+  return <PeriodViewSection data={data} compare={compare} />;
+}
+
+async function PetpoojaDailyLoader({
+  outletId,
+  period,
+}: {
+  outletId: string;
+  period: DashboardPeriod;
+}) {
+  const [itemPerformance, paymentBreakdown] = await Promise.all([
+    getItemPerformance(outletId, period),
+    getPaymentMethodBreakdown(outletId, period),
+  ]);
+  return (
+    <PetpoojaDailySection itemPerformance={itemPerformance} paymentBreakdown={paymentBreakdown} />
+  );
+}
+
+async function ChannelEconomicsLoader({
+  outletId,
+  period,
+}: {
+  outletId: string;
+  period: DashboardPeriod;
+}) {
+  const data = await getChannelEconomics(outletId, period);
+  return <ChannelEconomicsSection rows={data} />;
+}
+
+async function DiscountPerformanceLoader({
+  outletId,
+  period,
+}: {
+  outletId: string;
+  period: DashboardPeriod;
+}) {
+  const data = await getDiscountPerformance(outletId, period);
+  return <DiscountPerformanceSection data={data} periodLabel={period.label} />;
+}
+
+async function CustomerTilesLoader({
+  outletId,
+  period,
+}: {
+  outletId: string;
+  period: DashboardPeriod;
+}) {
+  const data = await getCustomerTiles(outletId, period);
+  return <CustomerTilesSection data={data} />;
+}
+
+function SectionSkeleton({ height }: { height: string }) {
+  return <Skeleton className={`${height} w-full rounded-[24px]`} />;
+}
 
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -83,14 +160,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? resolvedSearchParams.compare[0]
       : resolvedSearchParams.compare) === "true";
 
-  const [morningCheck, periodView, channelEconomics, discountPerformance, customerTiles] =
-    await Promise.all([
-      getMorningCheck(selectedOutlet.id),
-      getPeriodView(selectedOutlet.id, period, compare),
-      getChannelEconomics(selectedOutlet.id, period),
-      getDiscountPerformance(selectedOutlet.id, period),
-      getCustomerTiles(selectedOutlet.id, period),
-    ]);
+  // Only the morning check is awaited synchronously — the empty-state UI below
+  // depends on its result. Every other section streams in via <Suspense>.
+  const morningCheck = await getMorningCheck(selectedOutlet.id);
 
   if (!morningCheck) {
     return (
@@ -180,13 +252,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </section>
 
       <MorningCheckSection data={morningCheck} />
-      <PeriodViewSection data={periodView} compare={compare} />
-      <ChannelEconomicsSection rows={channelEconomics} />
-      <DiscountPerformanceSection
-        data={discountPerformance}
-        periodLabel={periodView.period.label}
-      />
-      <CustomerTilesSection data={customerTiles} />
+
+      <Suspense fallback={<SectionSkeleton height="h-[480px]" />}>
+        <PeriodViewLoader outletId={selectedOutlet.id} period={period} compare={compare} />
+      </Suspense>
+
+      <Suspense fallback={<SectionSkeleton height="h-[360px]" />}>
+        <PetpoojaDailyLoader outletId={selectedOutlet.id} period={period} />
+      </Suspense>
+
+      <Suspense fallback={<SectionSkeleton height="h-[300px]" />}>
+        <ChannelEconomicsLoader outletId={selectedOutlet.id} period={period} />
+      </Suspense>
+
+      <Suspense fallback={<SectionSkeleton height="h-[260px]" />}>
+        <DiscountPerformanceLoader outletId={selectedOutlet.id} period={period} />
+      </Suspense>
+
+      <Suspense fallback={<SectionSkeleton height="h-[170px]" />}>
+        <CustomerTilesLoader outletId={selectedOutlet.id} period={period} />
+      </Suspense>
       {/* TODO: Add a compact P&L summary card here once monthly report history is deep enough to be decision-useful. */}
     </div>
   );

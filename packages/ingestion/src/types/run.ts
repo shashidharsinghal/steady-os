@@ -20,6 +20,7 @@ export interface IngestionRun {
   uploaded_by: string;
   uploaded_at: string;
   source_type: string;
+  trigger_source: "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
   detection_method: DetectionMethod;
   detection_confidence: number | null;
   user_confirmed_source: boolean;

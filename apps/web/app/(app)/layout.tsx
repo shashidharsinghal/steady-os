@@ -17,16 +17,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
+  // `count: 'exact'` forces a full table scan; `'estimated'` is plenty
+  // accurate for a sidebar badge and avoids paying that cost on every nav.
   const [{ data: profile }, { count: outletCount }] = await Promise.all([
     supabase.from("profiles").select("full_name").eq("user_id", user.id).single(),
     role === "partner"
       ? supabase
           .from("outlets")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .is("archived_at", null)
       : supabase
           .from("outlet_members")
-          .select("outlet_id", { count: "exact", head: true })
+          .select("outlet_id", { count: "estimated", head: true })
           .eq("user_id", user.id),
   ]);
 

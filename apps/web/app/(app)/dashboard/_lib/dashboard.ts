@@ -5,6 +5,27 @@ const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHANNELS = ["dine_in", "takeaway", "swiggy", "zomato", "other"] as const;
 
+// `new Intl.DateTimeFormat(...)` is surprisingly expensive (≈10–50µs per call).
+// The dashboard helpers used to call it inside tight per-row loops, which dwarfed
+// the actual aggregation work. We hoist these to module scope so each formatter
+// is constructed once for the lifetime of the server process.
+const DAY_KEY_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const HOUR_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+const SHORT_WEEKDAY_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Kolkata",
+  weekday: "short",
+});
+const WEEKDAY_INDEX = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
 export type DashboardPeriodKey = "today" | "yesterday" | "7d" | "30d" | "mtd" | "custom";
 export type DashboardChannel = (typeof CHANNELS)[number];
 export type DashboardFreshnessState = "fresh" | "stale" | "critical";
@@ -29,12 +50,13 @@ type SalesOrderRow = {
   raw_data: unknown;
 };
 
-type PaymentTransactionRow = {
-  transacted_at: string;
-  source: string;
-  transaction_type: string;
-  upi_vpa: string | null;
-};
+// Narrow row used by morning check + period view. Selecting fewer columns
+// (and especially dropping the JSONB `raw_data`) is the single biggest
+// payload-size win on the dashboard.
+type MorningSalesRow = Pick<
+  SalesOrderRow,
+  "ordered_at" | "channel" | "total_amount_paise" | "discount_amount_paise"
+>;
 
 type CustomerProfileRow = {
   id: string;
@@ -200,6 +222,18 @@ export type CustomerTilesData = {
   dineInRepeatPct: number | null;
 };
 
+export type ItemPerformanceData = {
+  byCategory: Array<{ category: string; qty: number; revenuePaise: number }>;
+  topItems: Array<{ item: string; category: string | null; qty: number; revenuePaise: number }>;
+};
+
+export type PaymentMethodBreakdownRow = {
+  method: string;
+  totalPaise: number;
+  orderCount: number;
+  pct: number;
+};
+
 export function paiseToRupees(value: number): number {
   return value / 100;
 }
@@ -232,25 +266,43 @@ export function addIstDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }
 
-export function formatIstDate(date: Date, options?: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat("en-IN", {
+// Cache built-on-demand IST date formatters keyed by their option object.
+// `formatIstDate` is called with a small handful of distinct option objects,
+// so this turns ~thousands of `new Intl.DateTimeFormat` allocations into a
+// handful of Map lookups.
+const IST_DATE_FMT_CACHE = new Map<string, Intl.DateTimeFormat>();
+function istDateFormatter(options?: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const merged: Intl.DateTimeFormatOptions = {
     timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
     year: "numeric",
     ...options,
-  }).format(date);
+  };
+  const key = JSON.stringify(merged);
+  let cached = IST_DATE_FMT_CACHE.get(key);
+  if (!cached) {
+    cached = new Intl.DateTimeFormat("en-IN", merged);
+    IST_DATE_FMT_CACHE.set(key, cached);
+  }
+  return cached;
 }
 
+export function formatIstDate(date: Date, options?: Intl.DateTimeFormatOptions): string {
+  return istDateFormatter(options).format(date);
+}
+
+const IST_DATE_TIME_FMT = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 export function formatIstDateTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return IST_DATE_TIME_FMT.format(date);
 }
 
 export function formatCompactPeriodLabel(start: Date, endExclusive: Date): string {
@@ -259,24 +311,26 @@ export function formatCompactPeriodLabel(start: Date, endExclusive: Date): strin
 }
 
 function getDayKey(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
+  return DAY_KEY_FMT.format(new Date(iso));
 }
 
 function dateFromDayKey(dayKey: string): Date {
   return new Date(`${dayKey}T00:00:00+05:30`);
 }
 
+// Memoize day-of-week per `YYYY-MM-DD` string. Day keys repeat heavily across
+// every dashboard helper so once we've resolved a key once, every subsequent
+// lookup is a Map hit.
+const DOW_BY_DAY_KEY = new Map<string, number>();
 function getDayOfWeekFromKey(dayKey: string): number {
-  const label = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
-    weekday: "short",
-  }).format(dateFromDayKey(dayKey));
-  return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(label) + 1 || 1;
+  let cached = DOW_BY_DAY_KEY.get(dayKey);
+  if (cached !== undefined) return cached;
+  const label = SHORT_WEEKDAY_FMT.format(dateFromDayKey(dayKey));
+  cached = (WEEKDAY_INDEX as readonly string[]).indexOf(label) + 1 || 1;
+  // Bound the cache so a long-running server process can't grow it forever.
+  if (DOW_BY_DAY_KEY.size > 5000) DOW_BY_DAY_KEY.clear();
+  DOW_BY_DAY_KEY.set(dayKey, cached);
+  return cached;
 }
 
 function getDayLabel(dayKey: string): string {
@@ -341,7 +395,7 @@ function ribbonToneFromDeviation(value: number | null): DashboardRibbonTone {
   return "flat";
 }
 
-function buildDayStatsMap(rows: SalesOrderRow[]): Map<string, DayStats> {
+function buildDayStatsMap(rows: MorningSalesRow[]): Map<string, DayStats> {
   const map = new Map<string, DayStats>();
 
   rows.forEach((row) => {
@@ -417,43 +471,52 @@ function computeDoWBaseline(dayMap: Map<string, DayStats>, targetDayKey: string)
   };
 }
 
-function getHourOfDay(iso: string): number {
-  return Number(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Kolkata",
-      hour: "2-digit",
-      hourCycle: "h23",
-    }).format(new Date(iso))
-  );
-}
-
-function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern {
+function buildRushPattern(
+  rows: Pick<MorningSalesRow, "ordered_at" | "total_amount_paise">[],
+  now = new Date()
+): RushPattern {
   const todayKey = getDayKey(now.toISOString());
   const todayDow = getDayOfWeekFromKey(todayKey);
-  const historicalRows = rows.filter((row) => getDayKey(row.ordered_at) < todayKey);
+
+  // One-shot enrichment: pay the date-parsing cost once per row instead of
+  // 6+ times across the helpers below. The previous code re-derived dayKey
+  // (via Intl.DateTimeFormat) on every filter pass — O(rows × hours × days).
+  const enriched = rows.map((row) => {
+    const date = new Date(row.ordered_at);
+    return {
+      dayKey: DAY_KEY_FMT.format(date),
+      hour: Number(HOUR_FMT.format(date)),
+      total: toNumber(row.total_amount_paise),
+    };
+  });
+
+  const historicalRows = enriched.filter((row) => row.dayKey < todayKey);
   const candidateRows = historicalRows.filter(
-    (row) => getDayOfWeekFromKey(getDayKey(row.ordered_at)) === todayDow
+    (row) => getDayOfWeekFromKey(row.dayKey) === todayDow
   );
 
-  const targetDayKeys = Array.from(new Set(candidateRows.map((row) => getDayKey(row.ordered_at))))
+  // Pre-bucket counts per day so "qualified day" filtering doesn't re-scan rows.
+  const candidateCountsByDay = new Map<string, number>();
+  candidateRows.forEach((row) => {
+    candidateCountsByDay.set(row.dayKey, (candidateCountsByDay.get(row.dayKey) ?? 0) + 1);
+  });
+  const qualifiedTargetDayKeys = Array.from(candidateCountsByDay.entries())
+    .filter(([, count]) => count >= 3)
+    .map(([key]) => key)
     .sort((left, right) => (left < right ? 1 : -1))
     .slice(0, 4);
-  const qualifiedTargetDayKeys = targetDayKeys.filter((dayKey) => {
-    const orders = candidateRows.filter((row) => getDayKey(row.ordered_at) === dayKey).length;
-    return orders >= 3;
-  });
 
-  const allHistoricalDayKeys = Array.from(
-    new Set(historicalRows.map((row) => getDayKey(row.ordered_at)))
-  )
+  const historicalCountsByDay = new Map<string, number>();
+  historicalRows.forEach((row) => {
+    historicalCountsByDay.set(row.dayKey, (historicalCountsByDay.get(row.dayKey) ?? 0) + 1);
+  });
+  const qualifiedAllDayKeys = Array.from(historicalCountsByDay.entries())
+    .filter(([, count]) => count >= 3)
+    .map(([key]) => key)
     .sort((left, right) => (left < right ? 1 : -1))
     .slice(0, 28);
-  const qualifiedAllDayKeys = allHistoricalDayKeys.filter((dayKey) => {
-    const orders = historicalRows.filter((row) => getDayKey(row.ordered_at) === dayKey).length;
-    return orders >= 3;
-  });
 
-  let scopedRows: SalesOrderRow[] = [];
+  let scopedRows: typeof enriched = [];
   let matchedDayKeys: string[] = [];
   let baselineLabel = "No weekday pattern yet";
   let fallbackLabel: string | null = null;
@@ -461,12 +524,14 @@ function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern 
 
   if (qualifiedTargetDayKeys.length >= 2) {
     matchedDayKeys = qualifiedTargetDayKeys;
-    scopedRows = candidateRows.filter((row) => matchedDayKeys.includes(getDayKey(row.ordered_at)));
+    const matchedSet = new Set(matchedDayKeys);
+    scopedRows = candidateRows.filter((row) => matchedSet.has(row.dayKey));
     baselineLabel = `${weekdayLabel(todayDow)} pattern from the last ${matchedDayKeys.length} week${matchedDayKeys.length === 1 ? "" : "s"}`;
     mode = "target_day";
   } else if (qualifiedAllDayKeys.length >= 2) {
     matchedDayKeys = qualifiedAllDayKeys;
-    scopedRows = historicalRows.filter((row) => matchedDayKeys.includes(getDayKey(row.ordered_at)));
+    const matchedSet = new Set(matchedDayKeys);
+    scopedRows = historicalRows.filter((row) => matchedSet.has(row.dayKey));
     baselineLabel = "Showing rush pattern across all weekdays";
     fallbackLabel = `Showing rush pattern for all weekdays (no ${weekdayLabel(todayDow)} data yet).`;
     mode = "all_days";
@@ -474,14 +539,22 @@ function buildRushPattern(rows: SalesOrderRow[], now = new Date()): RushPattern 
     fallbackLabel = `Typical ${weekdayLabel(todayDow)} peak hour will show after 2 weeks of data.`;
   }
 
+  // Single O(N) pass to bucket revenue by (dayKey, hour) instead of the prior
+  // 13 × matchedDays.length × scopedRows.length filter sweep.
+  const hourTotalsByDay = new Map<string, Map<number, number>>();
+  scopedRows.forEach((row) => {
+    let dayMap = hourTotalsByDay.get(row.dayKey);
+    if (!dayMap) {
+      dayMap = new Map<number, number>();
+      hourTotalsByDay.set(row.dayKey, dayMap);
+    }
+    dayMap.set(row.hour, (dayMap.get(row.hour) ?? 0) + row.total);
+  });
+
   const hours = Array.from({ length: 13 }, (_, index) => index + 11)
     .map((hour) => {
-      const dailyTotals = matchedDayKeys.map((dayKey) =>
-        scopedRows
-          .filter(
-            (row) => getDayKey(row.ordered_at) === dayKey && getHourOfDay(row.ordered_at) === hour
-          )
-          .reduce((sum, row) => sum + toNumber(row.total_amount_paise), 0)
+      const dailyTotals = matchedDayKeys.map(
+        (dayKey) => hourTotalsByDay.get(dayKey)?.get(hour) ?? 0
       );
       const averageRevenuePaise =
         dailyTotals.length > 0
@@ -666,7 +739,7 @@ export function buildFreshnessMessage(freshness: LegacyDashboardFreshness): {
 function buildMorningAlerts(args: {
   targetDay: MorningCheckCard;
   baseline: DoWBaseline;
-  rows: SalesOrderRow[];
+  rows: Pick<MorningSalesRow, "ordered_at" | "channel">[];
 }): MorningCheckAlert[] {
   const alerts: MorningCheckAlert[] = [];
   const { targetDay, baseline, rows } = args;
@@ -680,12 +753,25 @@ function buildMorningAlerts(args: {
     });
   }
 
-  const targetRows = rows.filter((row) => getDayKey(row.ordered_at) === targetDay.dayKey);
+  // Pre-bucket rows by (dayKey, channel) once, instead of filtering all rows
+  // per channel per prior day (was O(rows × CHANNELS × priorDays)).
+  const countsByDayChannel = new Map<string, Map<DashboardChannel, number>>();
+  rows.forEach((row) => {
+    const dayKey = getDayKey(row.ordered_at);
+    let channelMap = countsByDayChannel.get(dayKey);
+    if (!channelMap) {
+      channelMap = new Map<DashboardChannel, number>();
+      countsByDayChannel.set(dayKey, channelMap);
+    }
+    channelMap.set(row.channel, (channelMap.get(row.channel) ?? 0) + 1);
+  });
+
   const targetCounts = new Map<DashboardChannel, number>();
   CHANNELS.forEach((channel) => targetCounts.set(channel, 0));
-  targetRows.forEach((row) =>
-    targetCounts.set(row.channel, (targetCounts.get(row.channel) ?? 0) + 1)
-  );
+  const targetDayCounts = countsByDayChannel.get(targetDay.dayKey);
+  if (targetDayCounts) {
+    targetDayCounts.forEach((count, channel) => targetCounts.set(channel, count));
+  }
 
   const priorDays = enumerateDayKeys(
     addIstDays(dateFromDayKey(targetDay.dayKey), -7).toISOString(),
@@ -693,10 +779,7 @@ function buildMorningAlerts(args: {
   );
   CHANNELS.forEach((channel) => {
     if ((targetCounts.get(channel) ?? 0) > 0) return;
-    const averages = priorDays.map(
-      (dayKey) =>
-        rows.filter((row) => getDayKey(row.ordered_at) === dayKey && row.channel === channel).length
-    );
+    const averages = priorDays.map((dayKey) => countsByDayChannel.get(dayKey)?.get(channel) ?? 0);
     const average =
       averages.length > 0 ? averages.reduce((sum, value) => sum + value, 0) / averages.length : 0;
     if (average <= 0) return;
@@ -718,6 +801,20 @@ function buildRevenueSeries(
 ): RevenuePoint[] {
   const dayKeys = enumerateDayKeys(period.start, period.end);
 
+  // Pre-group dayMap by day-of-week once. Previously, for every period day we
+  // re-scanned all of dayMap and called Intl-backed `getDayOfWeekFromKey` on
+  // every entry — quadratic in the number of days held.
+  const sortedByKey = Array.from(dayMap.values()).sort((left, right) =>
+    left.dayKey < right.dayKey ? -1 : 1
+  );
+  const dowGroups = new Map<number, DayStats[]>();
+  sortedByKey.forEach((row) => {
+    const dow = getDayOfWeekFromKey(row.dayKey);
+    const bucket = dowGroups.get(dow);
+    if (bucket) bucket.push(row);
+    else dowGroups.set(dow, [row]);
+  });
+
   return dayKeys.map((dayKey) => {
     const stats = dayMap.get(dayKey) ?? {
       dayKey,
@@ -733,24 +830,25 @@ function buildRevenueSeries(
       },
     };
 
-    const trailingKeys = Array.from({ length: 28 }, (_, index) =>
-      getDayKey(addIstDays(dateFromDayKey(dayKey), -27 + index).toISOString())
-    );
-    const trailingRevenue = trailingKeys.map((key) => dayMap.get(key)?.revenuePaise ?? 0);
-    const movingAveragePaise =
-      trailingRevenue.length > 0
-        ? Math.round(
-            trailingRevenue.reduce((sum, value) => sum + value, 0) / trailingRevenue.length
-          )
-        : null;
+    // 28-day trailing moving average. Build the date once and step backwards
+    // by ms instead of re-deriving day keys via Intl on each iteration.
+    const baseDate = dateFromDayKey(dayKey);
+    let trailingTotal = 0;
+    for (let offset = 27; offset >= 0; offset -= 1) {
+      const trailingDate = new Date(baseDate.getTime() - offset * DAY_MS);
+      const trailingKey = DAY_KEY_FMT.format(trailingDate);
+      trailingTotal += dayMap.get(trailingKey)?.revenuePaise ?? 0;
+    }
+    const movingAveragePaise = Math.round(trailingTotal / 28);
 
-    const baselineDays = Array.from(dayMap.values())
-      .filter(
-        (row) =>
-          row.dayKey < dayKey && getDayOfWeekFromKey(row.dayKey) === getDayOfWeekFromKey(dayKey)
-      )
-      .sort((left, right) => (left.dayKey < right.dayKey ? 1 : -1))
-      .slice(0, 4);
+    const dayOfWeek = getDayOfWeekFromKey(dayKey);
+    const dowBucket = dowGroups.get(dayOfWeek) ?? [];
+    // dowBucket is sorted ascending; we want the latest 4 priors.
+    const baselineDays: DayStats[] = [];
+    for (let i = dowBucket.length - 1; i >= 0 && baselineDays.length < 4; i -= 1) {
+      const row = dowBucket[i]!;
+      if (row.dayKey < dayKey) baselineDays.push(row);
+    }
 
     const baselineAverage =
       baselineDays.length > 0
@@ -758,7 +856,6 @@ function buildRevenueSeries(
         : 0;
     const dowDeviationPct =
       baselineDays.length > 0 ? percentChange(stats.revenuePaise, baselineAverage) : null;
-    const dayOfWeek = getDayOfWeekFromKey(dayKey);
 
     return {
       dayKey,
@@ -976,11 +1073,12 @@ export async function getMorningCheck(outletId: string): Promise<MorningCheckDat
         .eq("status", "success")
         .order("ordered_at", { ascending: false })
         .limit(1),
+      // Morning check only needs ordered_at, channel, totals & discount.
+      // Dropping id/source/aggregator_*/settlement_status/customer_id/raw_data
+      // shaves a large JSONB TOAST + several columns per row × 84 days of orders.
       supabase
         .from("active_sales_orders")
-        .select(
-          "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, settlement_status, customer_id, raw_data"
-        )
+        .select("ordered_at, channel, total_amount_paise, discount_amount_paise")
         .eq("outlet_id", outletId)
         .eq("status", "success")
         .gte("ordered_at", lookbackStart)
@@ -992,7 +1090,7 @@ export async function getMorningCheck(outletId: string): Promise<MorningCheckDat
     latestOrder: latestOrderRows?.[0]?.ordered_at ?? null,
   });
 
-  const rows = (salesRows ?? []) as SalesOrderRow[];
+  const rows = (salesRows ?? []) as MorningSalesRow[];
   if (rows.length === 0) return null;
 
   const dayMap = buildDayStatsMap(rows);
@@ -1038,18 +1136,18 @@ export async function getPeriodView(
   );
   const fetchStart = historicalStart.toISOString();
 
+  // Period view only needs day-level aggregates: drop id/source/aggregator_*/customer_id/raw_data.
+  // raw_data alone is the heaviest column (TOAST'd JSONB) and was unused here.
   const { data } = await supabase
     .from("active_sales_orders")
-    .select(
-      "id, outlet_id, ordered_at, channel, source, status, total_amount_paise, gross_amount_paise, discount_amount_paise, aggregator_commission_paise, aggregator_fees_paise, aggregator_net_payout_paise, settlement_status, customer_id, raw_data"
-    )
+    .select("ordered_at, channel, total_amount_paise, discount_amount_paise")
     .eq("outlet_id", outletId)
     .eq("status", "success")
     .gte("ordered_at", fetchStart)
     .lt("ordered_at", period.end)
     .order("ordered_at", { ascending: true });
 
-  const rows = (data ?? []) as SalesOrderRow[];
+  const rows = (data ?? []) as MorningSalesRow[];
   const dayMap = buildDayStatsMap(rows);
   const current = buildRevenueSeries(dayMap, { start: period.start, end: period.end });
   const previous =
@@ -1163,19 +1261,33 @@ export async function getDiscountPerformance(
   period: DashboardPeriod
 ): Promise<DiscountPerformanceData> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("active_sales_orders")
-    .select("gross_amount_paise, discount_amount_paise, total_amount_paise, raw_data")
-    .eq("outlet_id", outletId)
-    .eq("status", "success")
-    .gte("ordered_at", period.start)
-    .lt("ordered_at", period.end);
+  // Split this fetch in two: a lean aggregation query without `raw_data` for
+  // every order, and a second query that only pulls `raw_data` for rows that
+  // actually had a discount (the only rows from which we extract coupon
+  // codes). Discounted rows are typically a small minority, so this cuts the
+  // total JSONB transfer dramatically vs. the previous single fat query.
+  const [{ data: aggregateData }, { data: couponData }] = await Promise.all([
+    supabase
+      .from("active_sales_orders")
+      .select("gross_amount_paise, discount_amount_paise, total_amount_paise")
+      .eq("outlet_id", outletId)
+      .eq("status", "success")
+      .gte("ordered_at", period.start)
+      .lt("ordered_at", period.end),
+    supabase
+      .from("active_sales_orders")
+      .select("discount_amount_paise, raw_data")
+      .eq("outlet_id", outletId)
+      .eq("status", "success")
+      .gte("ordered_at", period.start)
+      .lt("ordered_at", period.end)
+      .gt("discount_amount_paise", 0),
+  ]);
 
-  const rows = (data ?? []) as Array<{
+  const rows = (aggregateData ?? []) as Array<{
     gross_amount_paise: number | string;
     discount_amount_paise: number | string;
     total_amount_paise: number | string;
-    raw_data: unknown;
   }>;
 
   const discounted = rows.filter((row) => toNumber(row.discount_amount_paise) > 0);
@@ -1194,7 +1306,9 @@ export async function getDiscountPerformance(
       : null;
 
   const couponMap = new Map<string, DiscountCouponRow>();
-  discounted.forEach((row) => {
+  (
+    (couponData ?? []) as Array<{ discount_amount_paise: number | string; raw_data: unknown }>
+  ).forEach((row) => {
     const code = extractCouponCode(row.raw_data);
     if (!code) return;
     const current = couponMap.get(code) ?? { code, orders: 0, discountPaise: 0 };
@@ -1233,7 +1347,7 @@ export async function getCustomerTiles(
   period: DashboardPeriod
 ): Promise<CustomerTilesData> {
   const supabase = await createClient();
-  const [{ data: periodOrders }, { data: profiles }, { data: upiRows }] = await Promise.all([
+  const [{ data: periodOrders }, { data: upiRows }] = await Promise.all([
     supabase
       .from("active_sales_orders")
       .select("customer_id")
@@ -1242,9 +1356,6 @@ export async function getCustomerTiles(
       .gte("ordered_at", period.start)
       .lt("ordered_at", period.end)
       .not("customer_id", "is", null),
-    supabase
-      .from("active_customer_profiles")
-      .select("id, first_seen_at, last_seen_at, total_orders, highest_segment"),
     supabase
       .from("active_payment_transactions")
       .select("upi_vpa, transaction_type, source")
@@ -1264,8 +1375,20 @@ export async function getCustomerTiles(
     )
   );
 
+  const profileRows =
+    customerIds.length > 0
+      ? ((
+          await supabase
+            .from("active_customer_profiles")
+            .select("id, first_seen_at, total_orders")
+            .in("id", customerIds)
+        ).data ?? [])
+      : [];
+
   const profileMap = new Map(
-    ((profiles ?? []) as CustomerProfileRow[]).map((row) => [row.id, row])
+    (profileRows as Array<Pick<CustomerProfileRow, "id" | "first_seen_at" | "total_orders">>).map(
+      (row) => [row.id, row]
+    )
   );
 
   let newCount = 0;
@@ -1281,7 +1404,13 @@ export async function getCustomerTiles(
   });
 
   const vpaCounts = new Map<string, number>();
-  ((upiRows ?? []) as PaymentTransactionRow[]).forEach((row) => {
+  (
+    (upiRows ?? []) as Array<{
+      upi_vpa: string | null;
+      transaction_type: string;
+      source: string;
+    }>
+  ).forEach((row) => {
     if (!row.upi_vpa) return;
     vpaCounts.set(row.upi_vpa, (vpaCounts.get(row.upi_vpa) ?? 0) + 1);
   });
@@ -1296,4 +1425,77 @@ export async function getCustomerTiles(
     regularCount,
     dineInRepeatPct: totalVpas > 0 ? (repeatVpas / totalVpas) * 100 : null,
   };
+}
+
+export async function getItemPerformance(
+  outletId: string,
+  period: DashboardPeriod
+): Promise<ItemPerformanceData> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("dashboard_item_performance", {
+    p_outlet_id: outletId,
+    p_start: period.start,
+    p_end: period.end,
+  });
+
+  const rows = (data ?? []) as Array<{
+    kind: string;
+    category: string | null;
+    item_name: string | null;
+    qty: number | string;
+    revenue_paise: number | string;
+  }>;
+
+  return {
+    byCategory: rows
+      .filter((row) => row.kind === "category")
+      .map((row) => ({
+        category: row.category ?? "Uncategorised",
+        qty: Number(row.qty),
+        revenuePaise: toNumber(row.revenue_paise),
+      }))
+      .sort((left, right) => right.revenuePaise - left.revenuePaise)
+      .slice(0, 5),
+    topItems: rows
+      .filter((row) => row.kind === "item" && row.item_name)
+      .map((row) => ({
+        item: row.item_name!,
+        category: row.category,
+        qty: Number(row.qty),
+        revenuePaise: toNumber(row.revenue_paise),
+      }))
+      .sort((left, right) => right.revenuePaise - left.revenuePaise)
+      .slice(0, 10),
+  };
+}
+
+export async function getPaymentMethodBreakdown(
+  outletId: string,
+  period: DashboardPeriod
+): Promise<PaymentMethodBreakdownRow[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("dashboard_payment_method_breakdown", {
+    p_outlet_id: outletId,
+    p_start: period.start,
+    p_end: period.end,
+  });
+
+  const rows = (data ?? []) as Array<{
+    method: string;
+    total_paise: number | string;
+    order_count: number | string;
+  }>;
+  const total = rows.reduce((sum, row) => sum + toNumber(row.total_paise), 0);
+
+  return rows
+    .map((row) => {
+      const totalPaise = toNumber(row.total_paise);
+      return {
+        method: row.method,
+        totalPaise,
+        orderCount: Number(row.order_count),
+        pct: total > 0 ? (totalPaise / total) * 100 : 0,
+      };
+    })
+    .sort((left, right) => right.totalPaise - left.totalPaise);
 }

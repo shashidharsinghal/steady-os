@@ -28,6 +28,12 @@ import type { Tables } from "@stride-os/db";
 import type { IngestionStatus } from "@stride-os/ingestion";
 import { getDeleteImpact, softDeleteRun, undoDeleteRun, type DeleteImpact } from "../actions";
 import { RunStatusBadge } from "./RunStatusBadge";
+import {
+  TRIGGER_FILTERS,
+  TriggerSourceBadge,
+  triggerSourceFilter,
+  type TriggerFilter,
+} from "./TriggerSourceBadge";
 
 type Run = Tables<"ingestion_runs">;
 
@@ -67,6 +73,7 @@ export function SoftDeleteRunsManager({
 }) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -74,6 +81,17 @@ export function SoftDeleteRunsManager({
   const [deletedExpanded, setDeletedExpanded] = useState(deletedRuns.length > 0);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const visibleCommittedRuns = useMemo(
+    () =>
+      committedRuns.filter((run) => {
+        if (triggerFilter === "all") return true;
+        return (
+          triggerSourceFilter((run as Run & { trigger_source?: string }).trigger_source) ===
+          triggerFilter
+        );
+      }),
+    [committedRuns, triggerFilter]
+  );
 
   useEffect(() => {
     let ignore = false;
@@ -105,7 +123,7 @@ export function SoftDeleteRunsManager({
   }
 
   function toggleAll(checked: boolean) {
-    setSelectedIds(checked ? committedRuns.map((run) => run.id) : []);
+    setSelectedIds(checked ? visibleCommittedRuns.map((run) => run.id) : []);
   }
 
   function handleConfirmDelete() {
@@ -139,7 +157,8 @@ export function SoftDeleteRunsManager({
     });
   }
 
-  const allSelected = committedRuns.length > 0 && selectedIds.length === committedRuns.length;
+  const allSelected =
+    visibleCommittedRuns.length > 0 && selectedIds.length === visibleCommittedRuns.length;
 
   return (
     <div className="space-y-8">
@@ -156,64 +175,90 @@ export function SoftDeleteRunsManager({
             No committed ingestion runs yet.
           </div>
         ) : (
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all committed runs"
-                        checked={allSelected}
-                        onChange={(event) => toggleAll(event.target.checked)}
-                      />
-                    </TableHead>
-                    <TableHead>File</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Rows</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Uploaded</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {committedRuns.map((run) => (
-                    <TableRow key={run.id}>
-                      <TableCell>
+          <>
+            <div className="flex flex-wrap gap-2">
+              {TRIGGER_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => {
+                    setTriggerFilter(filter.value);
+                    setSelectedIds([]);
+                  }}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                    triggerFilter === filter.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${run.file_name}`}
-                          checked={selectedSet.has(run.id)}
-                          onChange={(event) => toggleRun(run.id, event.target.checked)}
+                          aria-label="Select all committed runs"
+                          checked={allSelected}
+                          onChange={(event) => toggleAll(event.target.checked)}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/ingest/${run.id}`} className="flex items-center gap-2">
-                          <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
-                          <span className="font-medium">{run.file_name}</span>
-                          <span className="text-muted-foreground text-xs">
-                            {formatBytes(run.file_size_bytes)}
-                          </span>
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {run.source_type}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {run.rows_parsed != null ? run.rows_parsed.toLocaleString("en-IN") : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <RunStatusBadge status={run.status as IngestionStatus} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {formatDate(run.uploaded_at)}
-                      </TableCell>
+                      </TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Rows</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Uploaded</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleCommittedRuns.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${run.file_name}`}
+                            checked={selectedSet.has(run.id)}
+                            onChange={(event) => toggleRun(run.id, event.target.checked)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/ingest/${run.id}`} className="flex items-center gap-2">
+                            <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
+                            <span className="font-medium">{run.file_name}</span>
+                            <span className="text-muted-foreground text-xs">
+                              {formatBytes(run.file_size_bytes)}
+                            </span>
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {run.source_type}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {run.rows_parsed != null ? run.rows_parsed.toLocaleString("en-IN") : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <TriggerSourceBadge
+                              source={(run as Run & { trigger_source?: string }).trigger_source}
+                            />
+                            <RunStatusBadge status={run.status as IngestionStatus} />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {formatDate(run.uploaded_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </>
         )}
       </section>
 
@@ -257,7 +302,12 @@ export function SoftDeleteRunsManager({
                         <TableCell>
                           <div className="space-y-0.5">
                             <p className="font-medium">{run.file_name}</p>
-                            <p className="text-muted-foreground text-xs">{run.source_type}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-muted-foreground text-xs">{run.source_type}</p>
+                              <TriggerSourceBadge
+                                source={(run as Run & { trigger_source?: string }).trigger_source}
+                              />
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
@@ -349,6 +399,9 @@ export function SoftDeleteRunsManager({
               <div className="text-muted-foreground mt-2 space-y-1">
                 <p>{impact?.totals.salesOrders.toLocaleString("en-IN") ?? 0} orders</p>
                 <p>
+                  {impact?.totals.salesPaymentSplits.toLocaleString("en-IN") ?? 0} payment splits
+                </p>
+                <p>
                   {impact?.totals.paymentTransactions.toLocaleString("en-IN") ?? 0} payment
                   transactions
                 </p>
@@ -383,8 +436,8 @@ export function SoftDeleteRunsManager({
                     >
                       <span className="min-w-0 truncate">{run.fileName}</span>
                       <span className="shrink-0 text-xs">
-                        {run.salesOrders} orders · {run.paymentTransactions} txns ·{" "}
-                        {run.aggregatorPayouts} payouts
+                        {run.salesOrders} orders · {run.salesPaymentSplits} splits ·{" "}
+                        {run.paymentTransactions} txns · {run.aggregatorPayouts} payouts
                       </span>
                     </div>
                   ))}
@@ -415,6 +468,7 @@ export function SoftDeleteRunsManager({
               </p>
               <p className="text-muted-foreground text-sm">
                 Approx. {impact?.totals.salesOrders.toLocaleString("en-IN") ?? "…"} orders,{" "}
+                {impact?.totals.salesPaymentSplits.toLocaleString("en-IN") ?? "…"} splits,{" "}
                 {impact?.totals.paymentTransactions.toLocaleString("en-IN") ?? "…"} transactions
               </p>
             </div>

@@ -29,6 +29,12 @@ import type { IngestionStatus } from "@stride-os/ingestion";
 import { toast } from "sonner";
 import { deleteRuns } from "../actions";
 import { RunStatusBadge } from "./RunStatusBadge";
+import {
+  TRIGGER_FILTERS,
+  TriggerSourceBadge,
+  triggerSourceFilter,
+  type TriggerFilter,
+} from "./TriggerSourceBadge";
 
 type Run = Tables<"ingestion_runs">;
 
@@ -51,9 +57,21 @@ function formatDate(iso: string) {
 export function RunHistoryTable({ runs }: { runs: Run[] }) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
   const [isPending, startTransition] = useTransition();
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const allSelected = runs.length > 0 && selectedIds.length === runs.length;
+  const visibleRuns = useMemo(
+    () =>
+      runs.filter((run) => {
+        if (triggerFilter === "all") return true;
+        return (
+          triggerSourceFilter((run as Run & { trigger_source?: string }).trigger_source) ===
+          triggerFilter
+        );
+      }),
+    [runs, triggerFilter]
+  );
+  const allSelected = visibleRuns.length > 0 && selectedIds.length === visibleRuns.length;
 
   function toggleRun(runId: string, checked: boolean) {
     setSelectedIds((current) =>
@@ -62,7 +80,7 @@ export function RunHistoryTable({ runs }: { runs: Run[] }) {
   }
 
   function toggleAll(checked: boolean) {
-    setSelectedIds(checked ? runs.map((run) => run.id) : []);
+    setSelectedIds(checked ? visibleRuns.map((run) => run.id) : []);
   }
 
   function handleDeleteSelected() {
@@ -80,6 +98,25 @@ export function RunHistoryTable({ runs }: { runs: Run[] }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {TRIGGER_FILTERS.map((filter) => (
+          <button
+            key={filter.value}
+            type="button"
+            onClick={() => {
+              setTriggerFilter(filter.value);
+              setSelectedIds([]);
+            }}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              triggerFilter === filter.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-background text-muted-foreground"
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -101,7 +138,7 @@ export function RunHistoryTable({ runs }: { runs: Run[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {runs.map((run) => (
+              {visibleRuns.map((run) => (
                 <TableRow key={run.id}>
                   <TableCell>
                     <input
@@ -125,7 +162,12 @@ export function RunHistoryTable({ runs }: { runs: Run[] }) {
                     {run.rows_parsed != null ? run.rows_parsed.toLocaleString("en-IN") : "—"}
                   </TableCell>
                   <TableCell>
-                    <RunStatusBadge status={run.status as IngestionStatus} />
+                    <div className="flex items-center gap-2">
+                      <TriggerSourceBadge
+                        source={(run as Run & { trigger_source?: string }).trigger_source}
+                      />
+                      <RunStatusBadge status={run.status as IngestionStatus} />
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {formatDate(run.uploaded_at)}

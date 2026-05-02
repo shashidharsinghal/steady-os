@@ -239,6 +239,201 @@ export type Database = {
           },
         ];
       };
+      gmail_connections: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          connected_by: string;
+          gmail_address: string;
+          access_token: string | null;
+          refresh_token: string | null;
+          token_expires_at: string | null;
+          scopes: string[];
+          status: "active" | "expired" | "revoked" | "error";
+          last_sync_at: string | null;
+          last_sync_status: "success" | "partial" | "failed" | "no_emails" | null;
+          last_sync_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          connected_by: string;
+          gmail_address: string;
+          access_token?: string | null;
+          refresh_token?: string | null;
+          token_expires_at?: string | null;
+          scopes?: string[];
+          status?: "active" | "expired" | "revoked" | "error";
+          last_sync_at?: string | null;
+          last_sync_status?: "success" | "partial" | "failed" | "no_emails" | null;
+          last_sync_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          connected_by?: string;
+          gmail_address?: string;
+          access_token?: string | null;
+          refresh_token?: string | null;
+          token_expires_at?: string | null;
+          scopes?: string[];
+          status?: "active" | "expired" | "revoked" | "error";
+          last_sync_at?: string | null;
+          last_sync_status?: "success" | "partial" | "failed" | "no_emails" | null;
+          last_sync_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "gmail_connections_connected_by_fkey";
+            columns: ["connected_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gmail_connections_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      gmail_sync_runs: {
+        Row: {
+          id: string;
+          connection_id: string;
+          outlet_id: string;
+          triggered_by: "cron_primary" | "cron_retry" | "manual" | "backfill";
+          started_at: string;
+          completed_at: string | null;
+          status: "running" | "success" | "partial" | "failed" | "no_emails";
+          emails_found: number;
+          emails_processed: number;
+          emails_skipped: number;
+          ingestion_run_ids: string[];
+          processed_message_ids: string[];
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          connection_id: string;
+          outlet_id: string;
+          triggered_by: "cron_primary" | "cron_retry" | "manual" | "backfill";
+          started_at?: string;
+          completed_at?: string | null;
+          status?: "running" | "success" | "partial" | "failed" | "no_emails";
+          emails_found?: number;
+          emails_processed?: number;
+          emails_skipped?: number;
+          ingestion_run_ids?: string[];
+          processed_message_ids?: string[];
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          connection_id?: string;
+          outlet_id?: string;
+          triggered_by?: "cron_primary" | "cron_retry" | "manual" | "backfill";
+          started_at?: string;
+          completed_at?: string | null;
+          status?: "running" | "success" | "partial" | "failed" | "no_emails";
+          emails_found?: number;
+          emails_processed?: number;
+          emails_skipped?: number;
+          ingestion_run_ids?: string[];
+          processed_message_ids?: string[];
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "gmail_sync_runs_connection_id_fkey";
+            columns: ["connection_id"];
+            referencedRelation: "gmail_connections";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gmail_sync_runs_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      gmail_processed_messages: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          connection_id: string;
+          sync_run_id: string;
+          message_id: string;
+          source_type: string;
+          subject: string;
+          sender: string;
+          received_at: string | null;
+          ingestion_run_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          connection_id: string;
+          sync_run_id: string;
+          message_id: string;
+          source_type: string;
+          subject: string;
+          sender: string;
+          received_at?: string | null;
+          ingestion_run_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          connection_id?: string;
+          sync_run_id?: string;
+          message_id?: string;
+          source_type?: string;
+          subject?: string;
+          sender?: string;
+          received_at?: string | null;
+          ingestion_run_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "gmail_processed_messages_connection_id_fkey";
+            columns: ["connection_id"];
+            referencedRelation: "gmail_connections";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gmail_processed_messages_ingestion_run_id_fkey";
+            columns: ["ingestion_run_id"];
+            referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gmail_processed_messages_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gmail_processed_messages_sync_run_id_fkey";
+            columns: ["sync_run_id"];
+            referencedRelation: "gmail_sync_runs";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       ingestion_runs: {
         Row: {
           id: string;
@@ -246,6 +441,7 @@ export type Database = {
           uploaded_by: string;
           uploaded_at: string;
           source_type: string;
+          trigger_source: "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
           detection_method:
             | "filename_pattern"
             | "header_inspection"
@@ -295,6 +491,7 @@ export type Database = {
           uploaded_by: string;
           uploaded_at?: string;
           source_type: string;
+          trigger_source?: "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
           detection_method:
             | "filename_pattern"
             | "header_inspection"
@@ -343,6 +540,7 @@ export type Database = {
           uploaded_by?: string;
           uploaded_at?: string;
           source_type?: string;
+          trigger_source?: "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
           detection_method?:
             | "filename_pattern"
             | "header_inspection"
@@ -701,6 +899,7 @@ export type Database = {
           source: string;
           source_order_id: string;
           channel: Database["public"]["Enums"]["sales_channel"];
+          order_type: string | null;
           order_type_raw: string | null;
           area_raw: string | null;
           sub_order_type_raw: string | null;
@@ -732,6 +931,9 @@ export type Database = {
           biller: string | null;
           kot_no: string | null;
           notes: string | null;
+          covers: number | null;
+          server_name: string | null;
+          table_no: string | null;
           ingestion_run_id: string;
           raw_data: Json;
           created_at: string;
@@ -742,6 +944,7 @@ export type Database = {
           source: string;
           source_order_id: string;
           channel: Database["public"]["Enums"]["sales_channel"];
+          order_type?: string | null;
           order_type_raw?: string | null;
           area_raw?: string | null;
           sub_order_type_raw?: string | null;
@@ -773,6 +976,9 @@ export type Database = {
           biller?: string | null;
           kot_no?: string | null;
           notes?: string | null;
+          covers?: number | null;
+          server_name?: string | null;
+          table_no?: string | null;
           ingestion_run_id: string;
           raw_data: Json;
           created_at?: string;
@@ -783,6 +989,7 @@ export type Database = {
           source?: string;
           source_order_id?: string;
           channel?: Database["public"]["Enums"]["sales_channel"];
+          order_type?: string | null;
           order_type_raw?: string | null;
           area_raw?: string | null;
           sub_order_type_raw?: string | null;
@@ -814,6 +1021,9 @@ export type Database = {
           biller?: string | null;
           kot_no?: string | null;
           notes?: string | null;
+          covers?: number | null;
+          server_name?: string | null;
+          table_no?: string | null;
           ingestion_run_id?: string;
           raw_data?: Json;
           created_at?: string;
@@ -893,6 +1103,55 @@ export type Database = {
             foreignKeyName: "sales_line_items_order_id_fkey";
             columns: ["order_id"];
             referencedRelation: "sales_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      sales_payment_splits: {
+        Row: {
+          id: string;
+          order_id: string;
+          outlet_id: string;
+          method: string;
+          amount_paise: number;
+          ingestion_run_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          outlet_id: string;
+          method: string;
+          amount_paise: number;
+          ingestion_run_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          outlet_id?: string;
+          method?: string;
+          amount_paise?: number;
+          ingestion_run_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sales_payment_splits_ingestion_run_id_fkey";
+            columns: ["ingestion_run_id"];
+            referencedRelation: "ingestion_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sales_payment_splits_order_id_fkey";
+            columns: ["order_id"];
+            referencedRelation: "sales_orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sales_payment_splits_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
             referencedColumns: ["id"];
           },
         ];
@@ -1372,6 +1631,7 @@ export type Database = {
           uploaded_by: string;
           uploaded_at: string;
           source_type: string;
+          trigger_source: "manual_upload" | "gmail_auto" | "gmail_manual" | "gmail_backfill";
           detection_method:
             | "filename_pattern"
             | "header_inspection"
@@ -1416,6 +1676,14 @@ export type Database = {
       active_sales_orders: {
         Row: Database["public"]["Tables"]["sales_orders"]["Row"];
         Relationships: Database["public"]["Tables"]["sales_orders"]["Relationships"];
+      };
+      active_sales_line_items: {
+        Row: Database["public"]["Tables"]["sales_line_items"]["Row"];
+        Relationships: Database["public"]["Tables"]["sales_line_items"]["Relationships"];
+      };
+      active_sales_payment_splits: {
+        Row: Database["public"]["Tables"]["sales_payment_splits"]["Row"];
+        Relationships: Database["public"]["Tables"]["sales_payment_splits"]["Relationships"];
       };
       active_payment_transactions: {
         Row: Database["public"]["Tables"]["payment_transactions"]["Row"];
@@ -1521,6 +1789,32 @@ export type Database = {
       purge_deleted_runs: {
         Args: Record<PropertyKey, never>;
         Returns: number;
+      };
+      dashboard_item_performance: {
+        Args: {
+          p_outlet_id: string;
+          p_start: string;
+          p_end: string;
+        };
+        Returns: {
+          kind: string;
+          category: string | null;
+          item_name: string | null;
+          qty: number;
+          revenue_paise: number;
+        }[];
+      };
+      dashboard_payment_method_breakdown: {
+        Args: {
+          p_outlet_id: string;
+          p_start: string;
+          p_end: string;
+        };
+        Returns: {
+          method: string;
+          total_paise: number;
+          order_count: number;
+        }[];
       };
       sales_source_row_hash: {
         Args: { parts: string[] };

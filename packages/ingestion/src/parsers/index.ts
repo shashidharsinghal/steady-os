@@ -1,6 +1,7 @@
 import { isRegistered, registerParser } from "../registry";
 import type { Parser } from "../types/parser";
 import { petpoojaDayWiseParser } from "./petpoojaDayWise";
+import { petpoojaItemBillParser, petpoojaPaymentSummaryParser } from "./petpoojaDaily";
 import { petpoojaOrdersMasterParser } from "./petpoojaOrdersMaster";
 import { pineLabsPosParser } from "./pineLabsPos";
 import { pnlPdfParser } from "./pnlPdf";
@@ -9,6 +10,8 @@ import { zomatoAnnexureParser } from "./zomatoAnnexure";
 
 const salesParsers = [
   petpoojaOrdersMasterParser,
+  petpoojaItemBillParser,
+  petpoojaPaymentSummaryParser,
   petpoojaDayWiseParser,
   pineLabsPosParser,
   pnlPdfParser,
@@ -24,6 +27,8 @@ for (const parser of salesParsers) {
 
 export {
   petpoojaDayWiseParser,
+  petpoojaItemBillParser,
+  petpoojaPaymentSummaryParser,
   petpoojaOrdersMasterParser,
   pineLabsPosParser,
   pnlPdfParser,

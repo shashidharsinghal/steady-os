@@ -40,3 +40,4 @@ coverage/
 
 # Claude Code
 .claude/
+apps/web/prod_variables
