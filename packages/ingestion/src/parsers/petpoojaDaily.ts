@@ -298,6 +298,32 @@ function hasItemBillDate(value: unknown): boolean {
   );
 }
 
+function hasItemBillRowSignal(
+  rowDate: unknown,
+  timestamp: unknown,
+  quantity: unknown,
+  lineTotal: unknown
+): boolean {
+  if (hasItemBillDate(rowDate) || hasItemBillDate(timestamp)) return true;
+  return stripExcelNoise(quantity) !== "" && stripExcelNoise(lineTotal) !== "";
+}
+
+function resolveItemBillOrderedAt(
+  rowDate: unknown,
+  timestamp: unknown,
+  businessDate: string
+): string {
+  if (stripExcelNoise(timestamp) !== "") {
+    return toIstIsoString(timestamp);
+  }
+
+  if (hasItemBillDate(rowDate)) {
+    return toIstIsoString(rowDate);
+  }
+
+  return toIstIsoString(`${businessDate} 00:00:00`);
+}
+
 function derivePaymentMethod(splits: PetpoojaPaymentSplit[]): OrderPaymentMethod {
   if (splits.length === 0) return "other";
   if (splits.length > 1) return "part_payment";
@@ -368,9 +394,21 @@ export const petpoojaItemBillParser: Parser<
     for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
       const row = rows[rowIndex] ?? [];
       const rowDate = row[index.date!];
+      const rowTimestamp = row[index.timestamp!];
       const invoiceNo = stripExcelNoise(row[index["invoice no."]!]);
       const itemValue = stripExcelNoise(row[index.item!]);
-      if (!hasItemBillDate(rowDate) || !invoiceNo || !itemValue) continue;
+      if (
+        !invoiceNo ||
+        !itemValue ||
+        !hasItemBillRowSignal(
+          rowDate,
+          rowTimestamp,
+          row[index["qty."]!],
+          row[index["final total"]!]
+        )
+      ) {
+        continue;
+      }
       candidateRowCount += 1;
 
       try {
@@ -381,7 +419,7 @@ export const petpoojaItemBillParser: Parser<
           rowNumber: rowIndex + 1,
           businessDate,
           invoiceNo,
-          orderedAt: toIstIsoString(row[index.timestamp!]),
+          orderedAt: resolveItemBillOrderedAt(rowDate, rowTimestamp, businessDate),
           serverName: stripExcelNoise(row[index["server name"]!]) || null,
           tableNo: stripExcelNoise(row[index["table no."]!]) || null,
           covers: parseNullableInt(row[index.covers!]),
@@ -936,5 +974,29 @@ export function buildItemWorkbookOnAlternateSheet(rows: PetpoojaItemBillRecord[]
   workbook.Sheets["Daily Report "] = reportSheet;
   workbook.SheetNames = ["Daily Report "];
 
+  return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+}
+
+export function buildItemWorkbookWithBlankRowDates(rows: PetpoojaItemBillRecord[]): Buffer {
+  const workbook = XLSX.read(buildItemWorkbookWithExcelDates(rows), {
+    type: "buffer",
+    cellDates: true,
+  });
+  const reportSheet = workbook.Sheets.Report;
+  if (!reportSheet) {
+    throw new IngestionError(
+      "parse_error",
+      'Expected sheet "Report" was not found in the workbook.'
+    );
+  }
+
+  const matrix = getSheetRows(reportSheet);
+  for (let rowIndex = 4; rowIndex < matrix.length; rowIndex += 1) {
+    if (Array.isArray(matrix[rowIndex])) {
+      matrix[rowIndex]![0] = null;
+    }
+  }
+
+  workbook.Sheets.Report = XLSX.utils.aoa_to_sheet(matrix);
   return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
 }

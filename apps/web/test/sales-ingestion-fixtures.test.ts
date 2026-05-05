@@ -6,6 +6,7 @@ import { petpoojaDayWiseParser } from "../../../packages/ingestion/src/parsers/p
 import {
   buildItemWorkbook,
   buildItemWorkbookOnAlternateSheet,
+  buildItemWorkbookWithBlankRowDates,
   buildItemWorkbookWithExcelDates,
   petpoojaItemBillParser,
   petpoojaPaymentSummaryParser,
@@ -194,6 +195,10 @@ describe("sales ingestion fixtures", () => {
     return buildItemWorkbookOnAlternateSheet([dailyItemRows[0]!]);
   }
 
+  function dailyItemBufferWithBlankRowDates() {
+    return buildItemWorkbookWithBlankRowDates([dailyItemRows[0]!]);
+  }
+
   function dailyPaymentBuffer() {
     return Buffer.from(`<html><body><table>
         <tr><td>Date</td><td>2026-04-28 to 2026-04-28</td></tr>
@@ -284,6 +289,22 @@ describe("sales ingestion fixtures", () => {
 
     expect(result.records).toHaveLength(1);
     expect(result.records[0]?.invoiceNo).toBe("808");
+    expect(errors).toEqual([]);
+  });
+
+  it("parses item rows when the row date cells are blank but timestamps are present", async () => {
+    const errors: Array<{ rowNumber: number; errorCode: string; errorMessage: string }> = [];
+    const result = await petpoojaItemBillParser.parse({
+      runId: "item-blank-date-run",
+      outletId: "outlet-elan",
+      filePath: "Item_bill_report_2026_04_29_01_56_15.xlsx",
+      fileBuffer: dailyItemBufferWithBlankRowDates(),
+      recordError: (error) => errors.push(error),
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]?.invoiceNo).toBe("808");
+    expect(result.records[0]?.quantity).toBe(2);
     expect(errors).toEqual([]);
   });
 
