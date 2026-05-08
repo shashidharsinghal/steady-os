@@ -1,5 +1,7 @@
 # Feature: Employees
 
+> **Status update (2026-05-08):** v2.1 shipped. Visual layer inherits from `design-system.md` v3 — no per-spec changes needed.
+
 Employees are people on the Steady Strides payroll — store managers, staff,
 and directly-hired cleaners. Agency-sourced cleaners and other outsourced
 roles live in the Contractors feature (separate spec).

@@ -141,6 +141,20 @@ export function RevenueOverTimeChart({
                       ) : null}
 
                       <div
+                        className="pointer-events-none absolute left-1/2 z-[1] -translate-x-1/2 whitespace-nowrap text-center"
+                        style={{ bottom: `calc(${Math.max(heightPct, 2)}% + 8px)` }}
+                      >
+                        <div className="bg-background/94 ring-border/70 rounded-[12px] px-2 py-1.5 shadow-sm ring-1">
+                          <p className="font-mono text-[10px] font-semibold leading-none">
+                            {formatINRCompact(point.revenue)}
+                          </p>
+                          <p className="text-muted-foreground mt-1 text-[9px] font-medium leading-none">
+                            {point.orders} orders
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
                         className="bg-primary w-full rounded-t-[10px] transition-[filter,opacity] duration-150 group-hover:brightness-110"
                         style={{ height: `${Math.max(heightPct, 2)}%` }}
                         aria-label={`${formatDayLabel(point.dayKey)} revenue ${formatINRCompact(point.revenue)} from ${point.orders} orders`}

@@ -1,11 +1,14 @@
 # Feature: Customer Intelligence
 
 **Status:** Draft
-**Last updated:** 2026-04-19
-**Related:** `dashboard-v2.md`, `ai-stack-architecture.md`,
-`sales-ingestion.md`
-**Depends on:** Sales ingestion committed; Pine Labs data ingested for
-dine-in visibility.
+
+> **Status update (2026-05-08):** v2.1 shipped. Customer identity unification across Pine Labs UPI, aggregators, and Petpooja is live.
+> **v3 visual update:** Customer detail page adopts the design-system v3 tokens. Customer list page sidebar nav remains in MAIN section.
+> **Last updated:** 2026-04-19
+> **Related:** `dashboard-v2.md`, `ai-stack-architecture.md`,
+> `sales-ingestion.md`
+> **Depends on:** Sales ingestion committed; Pine Labs data ingested for
+> dine-in visibility.
 
 ---
 

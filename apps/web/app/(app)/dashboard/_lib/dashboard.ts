@@ -1,5 +1,6 @@
+import { getCogsForPeriod } from "@/lib/inventory";
 import { createClient } from "@/lib/supabase/server";
-import { formatRelativeDistance } from "@stride-os/shared";
+import { formatINRCompact, formatRelativeDistance } from "@stride-os/shared";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,11 +27,21 @@ const SHORT_WEEKDAY_FMT = new Intl.DateTimeFormat("en-US", {
 });
 const WEEKDAY_INDEX = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
-export type DashboardPeriodKey = "today" | "yesterday" | "7d" | "30d" | "mtd" | "custom";
+export type DashboardPeriodKey =
+  | "today"
+  | "yesterday"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "ytd"
+  | "mtd"
+  | "custom";
 export type DashboardChannel = (typeof CHANNELS)[number];
 export type DashboardFreshnessState = "fresh" | "stale" | "critical";
-export type DashboardAlertTone = "warn" | "info";
+export type DashboardAlertTone = "red" | "amber";
 export type DashboardRibbonTone = "up" | "flat" | "down" | "none";
+export type DashboardTrendMetric = "sales" | "profit" | "orders" | "aov" | "repeat";
+export type DashboardCompareMode = "prev_period" | "prev_year" | "off";
 
 type SalesOrderRow = {
   id: string;
@@ -108,6 +119,25 @@ export type MorningCheckAlert = {
   tone: DashboardAlertTone;
   headline: string;
   detail: string;
+  href: string;
+};
+
+type InventoryAlertRow = {
+  id: string;
+  item_name: string;
+  variation: string | null;
+  current_stock: number | null;
+  reorder_level: number | null;
+  unit: string;
+};
+
+type RecentRunRow = {
+  id: string;
+  status: string;
+  file_name: string;
+  committed_at: string | null;
+  failed_at: string | null;
+  created_at: string;
 };
 
 export type MorningCheckCard = {
@@ -166,6 +196,43 @@ export type RevenuePoint = {
   dowDeviationPct: number | null;
   ribbonTone: DashboardRibbonTone;
   channels: Record<DashboardChannel, number>;
+};
+
+export type TrendPoint = {
+  dayKey: string;
+  shortLabel: string;
+  weekdayLabel: string;
+  dayOfWeek: number;
+  salesPaise: number;
+  orders: number;
+  aovPaise: number;
+  repeatPct: number | null;
+  grossProfitPaise: number | null;
+  profitMarginPct: number | null;
+  isWeekend: boolean;
+};
+
+export type StatStripTile = {
+  id: "sales" | "net_profit" | "profit_margin" | "orders" | "aov";
+  label: string;
+  value: string;
+  deltaText: string | null;
+  deltaTone: "up" | "down" | "flat" | "none";
+  subtitle: string;
+  spark: number[] | null;
+  linkHref?: string;
+  linkLabel?: string;
+};
+
+export type StatStripData = {
+  tiles: StatStripTile[];
+};
+
+export type TrendData = {
+  points: TrendPoint[];
+  comparePoints: TrendPoint[] | null;
+  compareMode: DashboardCompareMode;
+  metric: DashboardTrendMetric;
 };
 
 export type DoWPatternPoint = {
@@ -236,6 +303,10 @@ export type PaymentMethodBreakdownRow = {
 
 export function paiseToRupees(value: number): number {
   return value / 100;
+}
+
+function formatCurrencyCompactPaise(value: number) {
+  return formatINRCompact(value / 100);
 }
 
 function toNumber(value: number | string | null | undefined): number {
@@ -740,16 +811,88 @@ function buildMorningAlerts(args: {
   targetDay: MorningCheckCard;
   baseline: DoWBaseline;
   rows: Pick<MorningSalesRow, "ordered_at" | "channel">[];
+  recentRuns: RecentRunRow[];
+  inventoryAlerts: InventoryAlertRow[];
+  recentItemRows: Array<{
+    item_name: string;
+    quantity: number;
+    raw_data: unknown;
+    ordered_at: string;
+  }>;
 }): MorningCheckAlert[] {
   const alerts: MorningCheckAlert[] = [];
-  const { targetDay, baseline, rows } = args;
+  const { targetDay, baseline, rows, recentRuns, inventoryAlerts, recentItemRows } = args;
+
+  const criticalInventory = inventoryAlerts
+    .filter(
+      (row) =>
+        row.current_stock != null &&
+        row.reorder_level != null &&
+        row.current_stock <= row.reorder_level
+    )
+    .slice(0, 2);
+
+  const lowInventory = inventoryAlerts
+    .filter(
+      (row) =>
+        row.current_stock != null &&
+        row.reorder_level != null &&
+        row.current_stock > row.reorder_level &&
+        row.current_stock <= row.reorder_level * 1.5
+    )
+    .slice(0, 2);
+
+  criticalInventory.forEach((row) => {
+    alerts.push({
+      id: `inventory-critical-${row.id}`,
+      tone: "red",
+      headline: `${row.item_name}${row.variation ? ` (${row.variation})` : ""} is critical`,
+      detail: `${row.current_stock} ${row.unit} on hand against a reorder level of ${row.reorder_level}.`,
+      href: "/inventory",
+    });
+  });
+
+  if (criticalInventory.length === 0) {
+    lowInventory.forEach((row) => {
+      alerts.push({
+        id: `inventory-low-${row.id}`,
+        tone: "amber",
+        headline: `${row.item_name}${row.variation ? ` (${row.variation})` : ""} is running low`,
+        detail: `${row.current_stock} ${row.unit} left. Reorder level is ${row.reorder_level}.`,
+        href: "/inventory",
+      });
+    });
+  }
+
+  const failedRun = recentRuns.find((run) => run.status === "failed");
+  if (failedRun) {
+    alerts.push({
+      id: `ingest-failed-${failedRun.id}`,
+      tone: "red",
+      headline: "A recent ingest failed",
+      detail: `${failedRun.file_name} failed in the last 24 hours and needs attention.`,
+      href: "/ingest",
+    });
+  } else {
+    const reviewRun = recentRuns.find((run) => run.status === "preview_ready");
+    if (reviewRun) {
+      alerts.push({
+        id: `ingest-review-${reviewRun.id}`,
+        tone: "amber",
+        headline: "An ingest run is waiting for review",
+        detail: `${reviewRun.file_name} is preview-ready and still needs a partner commit.`,
+        href: "/ingest",
+      });
+    }
+  }
 
   if (baseline.deviationPct != null && Math.abs(baseline.deviationPct) >= 30) {
     alerts.push({
       id: `unusual-day-${targetDay.dayKey}`,
-      tone: "warn",
+      tone: "amber",
       headline: `Unusual ${targetDay.weekdayLabel.toLowerCase()}`,
       detail: `${targetDay.weekdayLabel} was ${Math.round(Math.abs(baseline.deviationPct))}% ${baseline.deviationPct > 0 ? "above" : "below"} average. ₹${Math.round(targetDay.revenuePaise / 100).toLocaleString("en-IN")} vs ₹${Math.round(baseline.averageRevenuePaise / 100).toLocaleString("en-IN")} typical.`,
+      href: "/dashboard",
     });
   }
 
@@ -786,13 +929,56 @@ function buildMorningAlerts(args: {
 
     alerts.push({
       id: `stale-channel-${targetDay.dayKey}-${channel}`,
-      tone: "info",
+      tone: "amber",
       headline: `No ${channelLabel(channel)} orders`,
       detail: `No ${channelLabel(channel).toLowerCase()} orders landed on ${targetDay.weekdayLabel}. Typical recent pace: ${average.toFixed(1)} order${average >= 1.5 ? "s" : ""} per day.`,
+      href: "/dashboard",
     });
   });
 
-  return alerts;
+  const last14Days = new Map<string, { label: string; currentQty: number; previousQty: number }>();
+  const todayStartMs = startOfIstDay(new Date()).getTime();
+  const currentWindowStartMs = addIstDays(new Date(todayStartMs), -7).getTime();
+  const previousWindowStartMs = addIstDays(new Date(todayStartMs), -14).getTime();
+
+  recentItemRows.forEach((row) => {
+    const orderedAt = new Date(row.ordered_at).getTime();
+    if (orderedAt < previousWindowStartMs) return;
+    const key = lineItemKey(row.item_name, row.raw_data);
+    const existing = last14Days.get(key) ?? {
+      label: row.item_name,
+      currentQty: 0,
+      previousQty: 0,
+    };
+    if (orderedAt >= currentWindowStartMs) existing.currentQty += row.quantity;
+    else existing.previousQty += row.quantity;
+    last14Days.set(key, existing);
+  });
+
+  const droppingItem = Array.from(last14Days.values())
+    .filter((row) => row.previousQty > 0 && row.currentQty < row.previousQty * 0.85)
+    .sort((left, right) => right.previousQty - left.previousQty)[0];
+
+  if (droppingItem) {
+    const declinePct = Math.round(
+      ((droppingItem.previousQty - droppingItem.currentQty) / droppingItem.previousQty) * 100
+    );
+    alerts.push({
+      id: `item-trend-${normalizeText(droppingItem.label)}`,
+      tone: "red",
+      headline: `${droppingItem.label} is trending down`,
+      detail: `The last 7 days are ${declinePct}% below the prior 7-day pace.`,
+      href: "/inventory",
+    });
+  }
+
+  return alerts
+    .sort((left, right) => {
+      const score = (alert: MorningCheckAlert) =>
+        alert.tone === "red" ? 0 : alert.id.startsWith("inventory-low") ? 2 : 1;
+      return score(left) - score(right);
+    })
+    .slice(0, 3);
 }
 
 function buildRevenueSeries(
@@ -917,6 +1103,38 @@ function rawValueToString(value: unknown): string | null {
   return null;
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function itemKeyFromName(itemName: string, variation: string | null | undefined) {
+  const trimmedVariation = variation?.trim();
+  return normalizeText(
+    trimmedVariation ? `${itemName.trim()} (${trimmedVariation})` : itemName.trim()
+  );
+}
+
+function lineItemKey(itemName: string, rawData: unknown) {
+  let variation: string | null = null;
+
+  if (rawData && typeof rawData === "object") {
+    const record = rawData as Record<string, unknown>;
+    const maybeVariation =
+      typeof record.variation === "string"
+        ? record.variation
+        : typeof record.Variation === "string"
+          ? record.Variation
+          : null;
+    variation = maybeVariation?.trim() || null;
+  }
+
+  if (variation) {
+    return itemKeyFromName(itemName.replace(/\s+\([^)]*\)\s*$/, "").trim(), variation);
+  }
+
+  return normalizeText(itemName.trim());
+}
+
 function extractCouponCode(rawData: unknown): string | null {
   if (!rawData || typeof rawData !== "object") return null;
 
@@ -963,6 +1181,8 @@ export function resolveDashboardPeriod(
     rawPeriod === "yesterday" ||
     rawPeriod === "7d" ||
     rawPeriod === "30d" ||
+    rawPeriod === "90d" ||
+    rawPeriod === "ytd" ||
     rawPeriod === "mtd" ||
     rawPeriod === "custom"
       ? rawPeriod
@@ -995,6 +1215,18 @@ export function resolveDashboardPeriod(
       start = addIstDays(todayStart, -30);
       end = todayStart;
       break;
+    case "90d":
+      label = "Last 90 days";
+      start = addIstDays(todayStart, -90);
+      end = todayStart;
+      break;
+    case "ytd": {
+      const parts = getIstParts(now);
+      label = "Year to date";
+      start = makeUtcFromIst(parts.year, 0, 1, 0);
+      end = addIstDays(todayStart, 1);
+      break;
+    }
     case "mtd": {
       const parts = getIstParts(now);
       label = "Month to date";
@@ -1042,6 +1274,17 @@ export function resolveDashboardPeriod(
   };
 }
 
+export function resolveDashboardCompareMode(
+  searchParams: Record<string, string | string[] | undefined>
+): DashboardCompareMode {
+  const rawCompare = Array.isArray(searchParams.compare)
+    ? searchParams.compare[0]
+    : searchParams.compare;
+
+  if (rawCompare === "prev_year" || rawCompare === "off") return rawCompare;
+  return "prev_period";
+}
+
 export function chooseDashboardOutlet<T extends { id: string }>(
   outlets: readonly T[],
   preferredOutletId?: string | null
@@ -1056,34 +1299,61 @@ export function chooseDashboardOutlet<T extends { id: string }>(
 export async function getMorningCheck(outletId: string): Promise<MorningCheckData | null> {
   const supabase = await createClient();
   const lookbackStart = addIstDays(startOfIstDay(new Date()), -84).toISOString();
+  const recentRunsStart = addIstDays(startOfIstDay(new Date()), -1).toISOString();
+  const recentItemStart = addIstDays(startOfIstDay(new Date()), -14).toISOString();
 
-  const [{ data: latestUploadRows }, { data: latestOrderRows }, { data: salesRows }] =
-    await Promise.all([
-      supabase
-        .from("active_ingestion_runs")
-        .select("committed_at")
-        .eq("outlet_id", outletId)
-        .eq("status", "committed")
-        .order("committed_at", { ascending: false })
-        .limit(1),
-      supabase
-        .from("active_sales_orders")
-        .select("ordered_at")
-        .eq("outlet_id", outletId)
-        .eq("status", "success")
-        .order("ordered_at", { ascending: false })
-        .limit(1),
-      // Morning check only needs ordered_at, channel, totals & discount.
-      // Dropping id/source/aggregator_*/settlement_status/customer_id/raw_data
-      // shaves a large JSONB TOAST + several columns per row × 84 days of orders.
-      supabase
-        .from("active_sales_orders")
-        .select("ordered_at, channel, total_amount_paise, discount_amount_paise")
-        .eq("outlet_id", outletId)
-        .eq("status", "success")
-        .gte("ordered_at", lookbackStart)
-        .order("ordered_at", { ascending: true }),
-    ]);
+  const [
+    { data: latestUploadRows },
+    { data: latestOrderRows },
+    { data: salesRows },
+    { data: recentRunsRows },
+    { data: inventoryRows },
+    { data: recentItemRows },
+  ] = await Promise.all([
+    supabase
+      .from("active_ingestion_runs")
+      .select("committed_at")
+      .eq("outlet_id", outletId)
+      .eq("status", "committed")
+      .order("committed_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("active_sales_orders")
+      .select("ordered_at")
+      .eq("outlet_id", outletId)
+      .eq("status", "success")
+      .order("ordered_at", { ascending: false })
+      .limit(1),
+    // Morning check only needs ordered_at, channel, totals & discount.
+    // Dropping id/source/aggregator_*/settlement_status/customer_id/raw_data
+    // shaves a large JSONB TOAST + several columns per row × 84 days of orders.
+    supabase
+      .from("active_sales_orders")
+      .select("ordered_at, channel, total_amount_paise, discount_amount_paise")
+      .eq("outlet_id", outletId)
+      .eq("status", "success")
+      .gte("ordered_at", lookbackStart)
+      .order("ordered_at", { ascending: true }),
+    supabase
+      .from("active_ingestion_runs")
+      .select("id, status, file_name, committed_at, failed_at, created_at")
+      .eq("outlet_id", outletId)
+      .gte("created_at", recentRunsStart)
+      .in("status", ["failed", "preview_ready"])
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("active_inventory_items")
+      .select("id, item_name, variation, current_stock, reorder_level, unit")
+      .eq("outlet_id", outletId)
+      .not("current_stock", "is", null)
+      .not("reorder_level", "is", null),
+    supabase
+      .from("sales_line_items")
+      .select("item_name, quantity, raw_data, sales_orders!inner(outlet_id, ordered_at, status)")
+      .eq("sales_orders.outlet_id", outletId)
+      .eq("sales_orders.status", "success")
+      .gte("sales_orders.ordered_at", recentItemStart),
+  ]);
 
   const freshness = buildFreshness({
     lastUpload: latestUploadRows?.[0]?.committed_at ?? null,
@@ -1113,7 +1383,39 @@ export async function getMorningCheck(outletId: string): Promise<MorningCheckDat
 
   const baseline = computeDoWBaseline(dayMap, targetDayKey);
   const rushPattern = buildRushPattern(rows);
-  const alerts = buildMorningAlerts({ targetDay, baseline, rows });
+  const usedItemKeys = new Set(
+    (
+      (recentItemRows ?? []) as Array<{
+        item_name: string;
+        raw_data: unknown;
+        quantity: number;
+        sales_orders: { ordered_at: string; status: string; outlet_id: string } | null;
+      }>
+    ).map((row) => lineItemKey(row.item_name, row.raw_data))
+  );
+
+  const alerts = buildMorningAlerts({
+    targetDay,
+    baseline,
+    rows,
+    recentRuns: (recentRunsRows ?? []) as RecentRunRow[],
+    inventoryAlerts: ((inventoryRows ?? []) as InventoryAlertRow[]).filter((row) =>
+      usedItemKeys.has(itemKeyFromName(row.item_name, row.variation))
+    ),
+    recentItemRows: (
+      (recentItemRows ?? []) as Array<{
+        item_name: string;
+        quantity: number;
+        raw_data: unknown;
+        sales_orders: { ordered_at: string; status: string; outlet_id: string } | null;
+      }>
+    ).map((row) => ({
+      item_name: row.item_name,
+      quantity: row.quantity,
+      raw_data: row.raw_data,
+      ordered_at: row.sales_orders?.ordered_at ?? "",
+    })),
+  });
 
   return {
     freshness,
@@ -1498,4 +1800,344 @@ export async function getPaymentMethodBreakdown(
       };
     })
     .sort((left, right) => right.totalPaise - left.totalPaise);
+}
+
+function compareWindowForMode(period: DashboardPeriod, mode: DashboardCompareMode) {
+  if (mode === "off") {
+    return { start: null, end: null };
+  }
+
+  if (mode === "prev_year") {
+    const start = new Date(period.start);
+    const end = new Date(period.end);
+    start.setUTCFullYear(start.getUTCFullYear() - 1);
+    end.setUTCFullYear(end.getUTCFullYear() - 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  return {
+    start: period.compareStart,
+    end: period.compareEnd,
+  };
+}
+
+function profitCoverageSubtitle(coveragePct: number) {
+  if (coveragePct <= 0) return "Add cost-to-prepare to see margin";
+  if (coveragePct >= 99.5) return "Inventory costs are covering this full window";
+  return `${coveragePct.toFixed(1)}% line-item cost coverage`;
+}
+
+type TrendOrderRow = {
+  ordered_at: string;
+  total_amount_paise: number | string;
+  customer_id: string | null;
+};
+
+type TrendLineRow = {
+  item_name: string;
+  quantity: number;
+  raw_data: unknown;
+  sales_orders: {
+    ordered_at: string;
+    outlet_id: string;
+    status: string;
+  } | null;
+};
+
+function initTrendPoint(
+  dayKey: string
+): TrendPoint & { repeatOrders: number; cogsPaiseInternal: number } {
+  const dayOfWeek = getDayOfWeekFromKey(dayKey);
+  return {
+    dayKey,
+    shortLabel: formatIstDate(dateFromDayKey(dayKey), { day: "2-digit", month: "short" }),
+    weekdayLabel: weekdayShortLabel(dayOfWeek),
+    dayOfWeek,
+    salesPaise: 0,
+    orders: 0,
+    aovPaise: 0,
+    repeatPct: null,
+    grossProfitPaise: null,
+    profitMarginPct: null,
+    isWeekend: dayOfWeek === 6 || dayOfWeek === 7,
+    repeatOrders: 0,
+    cogsPaiseInternal: 0,
+  };
+}
+
+function finalizeTrendPoints(
+  dayKeys: string[],
+  pointMap: Map<string, TrendPoint & { repeatOrders: number; cogsPaiseInternal: number }>
+): TrendPoint[] {
+  return dayKeys.map((dayKey) => {
+    const point = pointMap.get(dayKey) ?? initTrendPoint(dayKey);
+    const aovPaise = point.orders > 0 ? Math.round(point.salesPaise / point.orders) : 0;
+    const repeatPct = point.orders > 0 ? (point.repeatOrders / point.orders) * 100 : null;
+    const grossProfitPaise =
+      point.cogsPaiseInternal > 0 ? point.salesPaise - point.cogsPaiseInternal : null;
+    const profitMarginPct =
+      grossProfitPaise != null && point.salesPaise > 0
+        ? (grossProfitPaise / point.salesPaise) * 100
+        : null;
+
+    return {
+      dayKey: point.dayKey,
+      shortLabel: point.shortLabel,
+      weekdayLabel: point.weekdayLabel,
+      dayOfWeek: point.dayOfWeek,
+      salesPaise: point.salesPaise,
+      orders: point.orders,
+      aovPaise,
+      repeatPct,
+      grossProfitPaise,
+      profitMarginPct,
+      isWeekend: point.isWeekend,
+    };
+  });
+}
+
+async function buildTrendPointsForRange(
+  outletId: string,
+  startIso: string,
+  endIso: string
+): Promise<{
+  points: TrendPoint[];
+  costCoveragePct: number;
+}> {
+  const supabase = await createClient();
+  const [{ data: orderRows }, { data: lineRows }] = await Promise.all([
+    supabase
+      .from("active_sales_orders")
+      .select("ordered_at, total_amount_paise, customer_id")
+      .eq("outlet_id", outletId)
+      .eq("status", "success")
+      .gte("ordered_at", startIso)
+      .lt("ordered_at", endIso)
+      .order("ordered_at", { ascending: true }),
+    supabase
+      .from("sales_line_items")
+      .select("item_name, quantity, raw_data, sales_orders!inner(ordered_at, outlet_id, status)")
+      .eq("sales_orders.outlet_id", outletId)
+      .eq("sales_orders.status", "success")
+      .gte("sales_orders.ordered_at", startIso)
+      .lt("sales_orders.ordered_at", endIso),
+  ]);
+
+  const customerIds = Array.from(
+    new Set(
+      ((orderRows ?? []) as TrendOrderRow[])
+        .map((row) => row.customer_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const [profileRows, inventoryRows] = await Promise.all([
+    customerIds.length > 0
+      ? ((
+          await supabase
+            .from("active_customer_profiles")
+            .select("id, first_seen_at")
+            .in("id", customerIds)
+        ).data ?? [])
+      : [],
+    (
+      await supabase
+        .from("active_inventory_items")
+        .select("item_name, variation, cost_to_prepare_paise")
+        .eq("outlet_id", outletId)
+    ).data ?? [],
+  ]);
+
+  const profileMap = new Map(
+    (profileRows as Array<{ id: string; first_seen_at: string }>).map((row) => [
+      row.id,
+      row.first_seen_at,
+    ])
+  );
+  const costMap = new Map(
+    (
+      inventoryRows as Array<{
+        item_name: string;
+        variation: string | null;
+        cost_to_prepare_paise: number | null;
+      }>
+    ).map((row) => [itemKeyFromName(row.item_name, row.variation), row.cost_to_prepare_paise])
+  );
+
+  const pointMap = new Map<
+    string,
+    TrendPoint & { repeatOrders: number; cogsPaiseInternal: number }
+  >();
+  const dayKeys = enumerateDayKeys(startIso, endIso);
+  dayKeys.forEach((dayKey) => pointMap.set(dayKey, initTrendPoint(dayKey)));
+
+  for (const row of (orderRows ?? []) as TrendOrderRow[]) {
+    const dayKey = getDayKey(row.ordered_at);
+    const point = pointMap.get(dayKey) ?? initTrendPoint(dayKey);
+    point.salesPaise += toNumber(row.total_amount_paise);
+    point.orders += 1;
+    if (row.customer_id) {
+      const firstSeenAt = profileMap.get(row.customer_id);
+      if (firstSeenAt && new Date(firstSeenAt).getTime() < dateFromDayKey(dayKey).getTime()) {
+        point.repeatOrders += 1;
+      }
+    }
+    pointMap.set(dayKey, point);
+  }
+
+  let totalLineRows = 0;
+  let coveredLineRows = 0;
+  for (const row of (lineRows ?? []) as TrendLineRow[]) {
+    const orderedAt = row.sales_orders?.ordered_at;
+    if (!orderedAt) continue;
+    totalLineRows += 1;
+    const key = lineItemKey(row.item_name, row.raw_data);
+    const cost = costMap.get(key);
+    if (cost == null) continue;
+    coveredLineRows += 1;
+    const dayKey = getDayKey(orderedAt);
+    const point = pointMap.get(dayKey) ?? initTrendPoint(dayKey);
+    point.cogsPaiseInternal += cost * row.quantity;
+    pointMap.set(dayKey, point);
+  }
+
+  return {
+    points: finalizeTrendPoints(dayKeys, pointMap),
+    costCoveragePct: totalLineRows > 0 ? (coveredLineRows / totalLineRows) * 100 : 0,
+  };
+}
+
+export async function getTrendData(
+  outletId: string,
+  period: DashboardPeriod,
+  compareMode: DashboardCompareMode,
+  metric: DashboardTrendMetric
+): Promise<TrendData> {
+  const compareWindow = compareWindowForMode(period, compareMode);
+  const [current, compare] = await Promise.all([
+    buildTrendPointsForRange(outletId, period.start, period.end),
+    compareWindow.start && compareWindow.end
+      ? buildTrendPointsForRange(outletId, compareWindow.start, compareWindow.end)
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    points: current.points,
+    comparePoints: compare?.points ?? null,
+    compareMode,
+    metric,
+  };
+}
+
+export async function getStatStrip(
+  outletId: string,
+  period: DashboardPeriod
+): Promise<StatStripData> {
+  const [trend, compareTrend, cogsSummary] = await Promise.all([
+    buildTrendPointsForRange(outletId, period.start, period.end),
+    period.compareStart && period.compareEnd
+      ? buildTrendPointsForRange(outletId, period.compareStart, period.compareEnd)
+      : Promise.resolve(null),
+    getCogsForPeriod(outletId, new Date(period.start), new Date(period.end)),
+  ]);
+
+  const points = trend.points;
+  const salesPaise = points.reduce((sum, point) => sum + point.salesPaise, 0);
+  const orders = points.reduce((sum, point) => sum + point.orders, 0);
+  const aovPaise = orders > 0 ? Math.round(salesPaise / orders) : 0;
+  const profitPoints = points.filter((point) => point.grossProfitPaise != null);
+  const grossProfitPaise = profitPoints.reduce(
+    (sum, point) => sum + (point.grossProfitPaise ?? 0),
+    0
+  );
+  const marginBasisSalesPaise = profitPoints.reduce((sum, point) => sum + point.salesPaise, 0);
+  const profitMarginPct =
+    marginBasisSalesPaise > 0 ? (grossProfitPaise / marginBasisSalesPaise) * 100 : null;
+  const compareSalesPaise =
+    compareTrend?.points.reduce((sum, point) => sum + point.salesPaise, 0) ?? 0;
+  const compareOrders = compareTrend?.points.reduce((sum, point) => sum + point.orders, 0) ?? 0;
+  const compareAovPaise = compareOrders > 0 ? Math.round(compareSalesPaise / compareOrders) : 0;
+  const compareProfitPoints =
+    compareTrend?.points.filter((point) => point.grossProfitPaise != null) ?? [];
+  const compareGrossProfitPaise = compareProfitPoints.reduce(
+    (sum, point) => sum + (point.grossProfitPaise ?? 0),
+    0
+  );
+  const compareProfitSalesPaise = compareProfitPoints.reduce(
+    (sum, point) => sum + point.salesPaise,
+    0
+  );
+  const compareProfitMarginPct =
+    compareProfitSalesPaise > 0 ? (compareGrossProfitPaise / compareProfitSalesPaise) * 100 : null;
+
+  const salesDelta =
+    compareSalesPaise > 0 ? ((salesPaise - compareSalesPaise) / compareSalesPaise) * 100 : null;
+  const ordersDelta = compareOrders > 0 ? ((orders - compareOrders) / compareOrders) * 100 : null;
+  const aovDelta =
+    compareAovPaise > 0 ? ((aovPaise - compareAovPaise) / compareAovPaise) * 100 : null;
+  const profitMarginDelta =
+    profitMarginPct != null && compareProfitMarginPct != null
+      ? profitMarginPct - compareProfitMarginPct
+      : null;
+
+  return {
+    tiles: [
+      {
+        id: "sales",
+        label: `Sales · ${period.label}`,
+        value: formatCurrencyCompactPaise(salesPaise),
+        deltaText: salesDelta != null ? `${Math.abs(salesDelta).toFixed(1)}%` : null,
+        deltaTone:
+          salesDelta == null ? "none" : salesDelta > 0 ? "up" : salesDelta < 0 ? "down" : "flat",
+        subtitle: "vs prior comparable window",
+        spark: points.map((point) => point.salesPaise / 100),
+      },
+      {
+        id: "net_profit",
+        label: "Net profit",
+        value: "—",
+        deltaText: null,
+        deltaTone: "none",
+        subtitle: "Expenses module lands next, so net profit stays hidden for now",
+        spark: null,
+      },
+      {
+        id: "profit_margin",
+        label: "Profit margin · daily",
+        value: profitMarginPct == null ? "—" : `${profitMarginPct.toFixed(1)}%`,
+        deltaText: profitMarginDelta != null ? `${Math.abs(profitMarginDelta).toFixed(1)}pp` : null,
+        deltaTone:
+          profitMarginDelta == null
+            ? "none"
+            : profitMarginDelta > 0
+              ? "up"
+              : profitMarginDelta < 0
+                ? "down"
+                : "flat",
+        subtitle: profitCoverageSubtitle(cogsSummary.coveragePct),
+        spark: profitMarginPct == null ? null : points.map((point) => point.profitMarginPct ?? 0),
+        linkHref: profitMarginPct == null ? "/inventory" : undefined,
+        linkLabel: profitMarginPct == null ? "Configure inventory →" : undefined,
+      },
+      {
+        id: "orders",
+        label: "Orders",
+        value: orders.toLocaleString("en-IN"),
+        deltaText: ordersDelta != null ? `${Math.abs(ordersDelta).toFixed(1)}%` : null,
+        deltaTone:
+          ordersDelta == null ? "none" : ordersDelta > 0 ? "up" : ordersDelta < 0 ? "down" : "flat",
+        subtitle: "vs prior comparable window",
+        spark: points.map((point) => point.orders),
+      },
+      {
+        id: "aov",
+        label: "Avg order value",
+        value: formatCurrencyCompactPaise(aovPaise),
+        deltaText: aovDelta != null ? `${Math.abs(aovDelta).toFixed(1)}%` : null,
+        deltaTone: aovDelta == null ? "none" : aovDelta > 0 ? "up" : aovDelta < 0 ? "down" : "flat",
+        subtitle: "vs prior comparable window",
+        spark: points.map((point) => point.aovPaise / 100),
+      },
+    ],
+  };
 }

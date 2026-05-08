@@ -586,3 +586,116 @@ session — giving the dashboard real history from day one.
 - Disconnecting Gmail revokes access immediately
 - `pnpm typecheck && pnpm build` clean
 - CLAUDE.md updated with Gmail Auto-Ingest in Implemented Features
+
+## Phase 2 — Invoice Scanning (v3)
+
+The same Gmail watch that pulls Petpooja reports also scans incoming
+emails for vendor invoices. Detected invoices create rows in the
+`expenses` table with `status='auto_scanned'` (or `needs_review` if
+extraction confidence is low). Partners review and confirm in the
+"Pending bills" tab on `/expenses`.
+
+### Detection rules
+
+An email is a candidate invoice if:
+
+1. Subject contains any of: `invoice`, `bill`, `payment due`, `receipt`, `tax invoice`
+2. AND has a PDF or image attachment
+3. AND was not already processed (dedupe by Gmail message id)
+
+#### LPG / commercial gas bills
+
+Commercial LPG / gas billing emails are explicitly in scope for v3. A
+message should be treated as a gas-bill candidate when either:
+
+1. The subject contains terms like `lpg`, `gas`, `commercial bill`, or
+   `gas invoice`
+2. OR the attachment text contains signals such as `LPG COMMERCIAL GAS
+INVOICE`, `Bill Due Date`, `Meter No`, `Monthly Consumption`, or
+   `NET PAYABLE AMOUNT`
+
+Example subject:
+
+`LPG commercial bill for Gabru Di Chaap`
+
+For text-based PDFs, extraction should read the attachment contents
+directly before falling back to subject-only heuristics.
+
+### Extraction (OCR + LLM-assisted)
+
+For each candidate:
+
+1. Download the attachment to Supabase Storage
+2. If the PDF already contains machine-readable text, extract that text
+   directly first
+3. Otherwise, or for image/photo uploads, run multimodal OCR-style
+   extraction using an OpenAI vision-capable model
+4. Ask for strict structured JSON with: vendor_name, total_amount,
+   tax_amount, invoice_date, due_date, period_label, for_item,
+   description
+5. Persist the original document path so the same extraction helper can
+   later be reused for manual bill-photo uploads
+6. If extraction is high-confidence (all required fields parseable),
+   create the `expenses` row directly with `extraction_confidence` recorded
+7. If extraction fails or has missing fields, create a minimal row
+   with vendor_name=email_sender, total_amount=null,
+   description=email_subject, needs_review=true
+
+#### Structured fields for gas bills
+
+When the attachment is a gas bill, the extractor should attempt to fill:
+
+- `vendor_name`
+- `total_amount`
+- `tax_amount`
+- `invoice_date`
+- `due_date`
+- `period_label`
+- `for_item` (brand / unit / outlet hint from the bill)
+- `description` (human-readable summary including bill number or meter)
+
+If present, these details are also useful to derive:
+
+- bill number / invoice reference
+- meter number
+- reading period
+- disconnection date
+
+These do not require new schema columns in v3; they may be folded into
+`description`, `period_label`, and `for_item`.
+
+### Auto-approve threshold
+
+If `extraction_confidence >= 90` AND `total_paise <= outlets.auto_approve_under_paise`:
+
+- Status = `approved`
+
+Else if `extraction_confidence >= 90`:
+
+- Status = `auto_scanned` (needs partner click)
+
+Else:
+
+- Status = `needs_review` (low confidence, partner must edit)
+
+### Server actions
+
+```typescript
+async function scanForInvoices(
+  messageId: string,
+  outletId: string
+): Promise<{
+  candidate: boolean;
+  expenseId?: string;
+  reason?: string;
+}>;
+
+async function extractInvoiceFields(attachmentUrl: string): Promise<InvoiceExtractionResult>;
+```
+
+### UI surface
+
+- New tab on `/expenses` called "Pending bills" with badge count
+- Banner on `/expenses` if >=5 invoices need review
+- Gas bills should appear in Pending bills with amount, period, due
+  date, vendor, and source-confidence visible without opening the row

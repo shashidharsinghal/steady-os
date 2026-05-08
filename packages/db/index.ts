@@ -46,6 +46,10 @@ export type Database = {
           gst_number: string | null;
           fssai_license: string | null;
           opened_at: string | null;
+          opened_on: string | null;
+          total_invested_paise: number | null;
+          projected_breakeven_date: string | null;
+          auto_approve_under_paise: number;
           archived_at: string | null;
           created_at: string;
           updated_at: string;
@@ -61,6 +65,10 @@ export type Database = {
           gst_number?: string | null;
           fssai_license?: string | null;
           opened_at?: string | null;
+          opened_on?: string | null;
+          total_invested_paise?: number | null;
+          projected_breakeven_date?: string | null;
+          auto_approve_under_paise?: number;
           archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -76,6 +84,10 @@ export type Database = {
           gst_number?: string | null;
           fssai_license?: string | null;
           opened_at?: string | null;
+          opened_on?: string | null;
+          total_invested_paise?: number | null;
+          projected_breakeven_date?: string | null;
+          auto_approve_under_paise?: number;
           archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -150,6 +162,302 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: never[];
+      };
+      customer_segment_definitions: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          slot: number;
+          name: string;
+          color_token: string;
+          rule_type: string;
+          rule_params: Json;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          slot: number;
+          name: string;
+          color_token: string;
+          rule_type: string;
+          rule_params?: Json;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          slot?: number;
+          name?: string;
+          color_token?: string;
+          rule_type?: string;
+          rule_params?: Json;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customer_segment_definitions_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      expense_categories: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          name: string;
+          color_token: string;
+          is_active: boolean;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          name: string;
+          color_token: string;
+          is_active?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          name?: string;
+          color_token?: string;
+          is_active?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "expense_categories_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      expense_budgets: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          category_id: string;
+          monthly_budget_paise: number;
+          effective_from: string;
+          effective_to: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          category_id: string;
+          monthly_budget_paise: number;
+          effective_from: string;
+          effective_to?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          category_id?: string;
+          monthly_budget_paise?: number;
+          effective_from?: string;
+          effective_to?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "expense_budgets_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "expense_budgets_category_id_fkey";
+            columns: ["category_id"];
+            referencedRelation: "expense_categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      expenses: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          category_id: string;
+          subcategory: string | null;
+          vendor_name: string | null;
+          description: string;
+          for_item: string | null;
+          period_label: string | null;
+          amount_paise: number;
+          tax_paise: number;
+          total_paise: number;
+          status: Database["public"]["Enums"]["expense_status"];
+          invoice_date: string | null;
+          due_date: string | null;
+          paid_date: string | null;
+          paid_via: string | null;
+          paid_reference: string | null;
+          source: Database["public"]["Enums"]["expense_source"];
+          source_email_id: string | null;
+          source_email_addr: string | null;
+          attachment_url: string | null;
+          extraction_confidence: number | null;
+          is_recurring: boolean;
+          recurrence_period: string | null;
+          recurring_parent_id: string | null;
+          next_due_date: string | null;
+          approved_at: string | null;
+          approved_by: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          category_id: string;
+          subcategory?: string | null;
+          vendor_name?: string | null;
+          description: string;
+          for_item?: string | null;
+          period_label?: string | null;
+          amount_paise: number;
+          tax_paise?: number;
+          total_paise: number;
+          status?: Database["public"]["Enums"]["expense_status"];
+          invoice_date?: string | null;
+          due_date?: string | null;
+          paid_date?: string | null;
+          paid_via?: string | null;
+          paid_reference?: string | null;
+          source?: Database["public"]["Enums"]["expense_source"];
+          source_email_id?: string | null;
+          source_email_addr?: string | null;
+          attachment_url?: string | null;
+          extraction_confidence?: number | null;
+          is_recurring?: boolean;
+          recurrence_period?: string | null;
+          recurring_parent_id?: string | null;
+          next_due_date?: string | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          category_id?: string;
+          subcategory?: string | null;
+          vendor_name?: string | null;
+          description?: string;
+          for_item?: string | null;
+          period_label?: string | null;
+          amount_paise?: number;
+          tax_paise?: number;
+          total_paise?: number;
+          status?: Database["public"]["Enums"]["expense_status"];
+          invoice_date?: string | null;
+          due_date?: string | null;
+          paid_date?: string | null;
+          paid_via?: string | null;
+          paid_reference?: string | null;
+          source?: Database["public"]["Enums"]["expense_source"];
+          source_email_id?: string | null;
+          source_email_addr?: string | null;
+          attachment_url?: string | null;
+          extraction_confidence?: number | null;
+          is_recurring?: boolean;
+          recurrence_period?: string | null;
+          recurring_parent_id?: string | null;
+          next_due_date?: string | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "expenses_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "expenses_category_id_fkey";
+            columns: ["category_id"];
+            referencedRelation: "expense_categories";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "expenses_recurring_parent_id_fkey";
+            columns: ["recurring_parent_id"];
+            referencedRelation: "expenses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      activity_log: {
+        Row: {
+          id: string;
+          outlet_id: string | null;
+          user_id: string | null;
+          action: string;
+          target_type: string | null;
+          target_id: string | null;
+          details: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          outlet_id?: string | null;
+          user_id?: string | null;
+          action: string;
+          target_type?: string | null;
+          target_id?: string | null;
+          details?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string | null;
+          user_id?: string | null;
+          action?: string;
+          target_type?: string | null;
+          target_id?: string | null;
+          details?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "activity_log_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       employee_outlet_assignments: {
         Row: {
@@ -234,6 +542,200 @@ export type Database = {
           {
             foreignKeyName: "outlet_members_user_id_fkey";
             columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tasks: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          title: string;
+          details: string | null;
+          area:
+            | "operations"
+            | "food"
+            | "accounts"
+            | "maintenance"
+            | "people"
+            | "vendors"
+            | "marketing"
+            | "compliance"
+            | "other";
+          criticality: "low" | "medium" | "high" | "critical";
+          status: "open" | "in_progress" | "blocked" | "done" | "cancelled";
+          assignee_type: "user" | "role";
+          assignee_user_id: string | null;
+          assignee_role: "store_manager" | null;
+          created_by: string;
+          completed_by: string | null;
+          due_date: string | null;
+          completed_at: string | null;
+          related_type: string | null;
+          related_id: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          title: string;
+          details?: string | null;
+          area?:
+            | "operations"
+            | "food"
+            | "accounts"
+            | "maintenance"
+            | "people"
+            | "vendors"
+            | "marketing"
+            | "compliance"
+            | "other";
+          criticality?: "low" | "medium" | "high" | "critical";
+          status?: "open" | "in_progress" | "blocked" | "done" | "cancelled";
+          assignee_type?: "user" | "role";
+          assignee_user_id?: string | null;
+          assignee_role?: "store_manager" | null;
+          created_by: string;
+          completed_by?: string | null;
+          due_date?: string | null;
+          completed_at?: string | null;
+          related_type?: string | null;
+          related_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          title?: string;
+          details?: string | null;
+          area?:
+            | "operations"
+            | "food"
+            | "accounts"
+            | "maintenance"
+            | "people"
+            | "vendors"
+            | "marketing"
+            | "compliance"
+            | "other";
+          criticality?: "low" | "medium" | "high" | "critical";
+          status?: "open" | "in_progress" | "blocked" | "done" | "cancelled";
+          assignee_type?: "user" | "role";
+          assignee_user_id?: string | null;
+          assignee_role?: "store_manager" | null;
+          created_by?: string;
+          completed_by?: string | null;
+          due_date?: string | null;
+          completed_at?: string | null;
+          related_type?: string | null;
+          related_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tasks_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_assignee_user_id_fkey";
+            columns: ["assignee_user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_completed_by_fkey";
+            columns: ["completed_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      inventory_items: {
+        Row: {
+          id: string;
+          outlet_id: string;
+          item_name: string;
+          category: string | null;
+          variation: string | null;
+          selling_price_paise: number;
+          cost_to_prepare_paise: number | null;
+          current_stock: number | null;
+          reorder_level: number | null;
+          unit: string;
+          is_active: boolean;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          outlet_id: string;
+          item_name: string;
+          category?: string | null;
+          variation?: string | null;
+          selling_price_paise: number;
+          cost_to_prepare_paise?: number | null;
+          current_stock?: number | null;
+          reorder_level?: number | null;
+          unit?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          outlet_id?: string;
+          item_name?: string;
+          category?: string | null;
+          variation?: string | null;
+          selling_price_paise?: number;
+          cost_to_prepare_paise?: number | null;
+          current_stock?: number | null;
+          reorder_level?: number | null;
+          unit?: string;
+          is_active?: boolean;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_items_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_items_outlet_id_fkey";
+            columns: ["outlet_id"];
+            referencedRelation: "outlets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_items_updated_by_fkey";
+            columns: ["updated_by"];
             referencedRelation: "users";
             referencedColumns: ["id"];
           },
@@ -471,6 +973,7 @@ export type Database = {
           failed_at: string | null;
           deleted_at: string | null;
           deleted_by: string | null;
+          archived_at: string | null;
           purge_scheduled_at: string | null;
           rows_seen: number | null;
           rows_parsed: number | null;
@@ -521,6 +1024,8 @@ export type Database = {
           failed_at?: string | null;
           deleted_at?: string | null;
           deleted_by?: string | null;
+          archived_at?: string | null;
+          purge_scheduled_at?: string | null;
           rows_seen?: number | null;
           rows_parsed?: number | null;
           rows_to_insert?: number | null;
@@ -570,6 +1075,8 @@ export type Database = {
           failed_at?: string | null;
           deleted_at?: string | null;
           deleted_by?: string | null;
+          archived_at?: string | null;
+          purge_scheduled_at?: string | null;
           rows_seen?: number | null;
           rows_parsed?: number | null;
           rows_to_insert?: number | null;
@@ -1618,6 +2125,10 @@ export type Database = {
           gst_number: string | null;
           fssai_license: string | null;
           opened_at: string | null;
+          opened_on: string | null;
+          total_invested_paise: number | null;
+          projected_breakeven_date: string | null;
+          auto_approve_under_paise: number;
           archived_at: string | null;
           created_at: string;
           updated_at: string;
@@ -1653,6 +2164,7 @@ export type Database = {
           failed_at: string | null;
           deleted_at: string | null;
           deleted_by: string | null;
+          archived_at: string | null;
           purge_scheduled_at: string | null;
           rows_seen: number | null;
           rows_parsed: number | null;
@@ -1669,6 +2181,10 @@ export type Database = {
         };
         Relationships: never[];
       };
+      archived_ingestion_runs: {
+        Row: Database["public"]["Tables"]["ingestion_runs"]["Row"];
+        Relationships: Database["public"]["Tables"]["ingestion_runs"]["Relationships"];
+      };
       active_pnl_reports: {
         Row: Database["public"]["Tables"]["pnl_reports"]["Row"];
         Relationships: Database["public"]["Tables"]["pnl_reports"]["Relationships"];
@@ -1684,6 +2200,12 @@ export type Database = {
       active_sales_payment_splits: {
         Row: Database["public"]["Tables"]["sales_payment_splits"]["Row"];
         Relationships: Database["public"]["Tables"]["sales_payment_splits"]["Relationships"];
+      };
+      active_inventory_items: {
+        Row: Database["public"]["Tables"]["inventory_items"]["Row"] & {
+          profit_margin_pct: number | null;
+        };
+        Relationships: Database["public"]["Tables"]["inventory_items"]["Relationships"];
       };
       active_payment_transactions: {
         Row: Database["public"]["Tables"]["payment_transactions"]["Row"];
@@ -1747,6 +2269,35 @@ export type Database = {
           average_order_count: number;
         };
         Relationships: never[];
+      };
+      outlet_monthly_profit: {
+        Row: {
+          outlet_id: string;
+          month: string;
+          revenue_paise: number;
+          cogs_paise: number;
+          expenses_paise: number;
+          net_profit_paise: number;
+        };
+        Relationships: never[];
+      };
+      expense_budget_summary: {
+        Row: {
+          outlet_id: string;
+          category_id: string;
+          category_name: string;
+          color_token: string;
+          display_order: number;
+          budget_id: string | null;
+          monthly_budget_paise: number | null;
+          spent_paise: number;
+          pct_used: number | null;
+        };
+        Relationships: never[];
+      };
+      active_tasks: {
+        Row: Database["public"]["Tables"]["tasks"]["Row"];
+        Relationships: Database["public"]["Tables"]["tasks"]["Relationships"];
       };
     };
     Functions: {
@@ -1850,6 +2401,29 @@ export type Database = {
         | "failed"
         | "purged";
       detection_method: "filename_pattern" | "header_inspection" | "content_llm" | "user_override";
+      expense_status:
+        | "auto_scanned"
+        | "needs_review"
+        | "approved"
+        | "paid"
+        | "overdue"
+        | "rejected"
+        | "cancelled";
+      expense_source: "manual" | "gmail_scan" | "petpooja_pnl" | "recurring_auto";
+      task_status: "open" | "in_progress" | "blocked" | "done" | "cancelled";
+      task_criticality: "low" | "medium" | "high" | "critical";
+      task_area:
+        | "operations"
+        | "food"
+        | "accounts"
+        | "maintenance"
+        | "people"
+        | "vendors"
+        | "marketing"
+        | "compliance"
+        | "other";
+      task_assignee_type: "user" | "role";
+      task_role_assignee: "store_manager";
     };
     CompositeTypes: Record<string, never>;
   };

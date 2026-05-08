@@ -23,3 +23,11 @@ export const updateOutletSchema = outletFormSchema.partial().extend({
 
 export type CreateOutletInput = z.infer<typeof createOutletSchema>;
 export type UpdateOutletInput = z.infer<typeof updateOutletSchema>;
+
+export const investmentConfigSchema = z.object({
+  opened_on: z.string().min(1, "Opening date is required"),
+  total_invested_rupees: z.coerce.number().positive("Investment must be greater than zero"),
+  projected_breakeven_date: z.string().optional().or(z.literal("")),
+});
+
+export type InvestmentConfigInput = z.infer<typeof investmentConfigSchema>;

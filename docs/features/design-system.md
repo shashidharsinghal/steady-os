@@ -1,227 +1,266 @@
-# Feature: Design System v1 + Dark Mode
+# Feature: Design System v3
 
-Upgrade Stride OS from default-scaffold UI to a distinctive, modern,
-information-dense design system. Fix dark mode. Establish patterns every
-future feature will inherit.
+**Status:** Final — for v3 implementation
+**Last updated:** 2026-05-08
+**Supersedes:** earlier abstract design-system.md
+**Visual reference:** `docs/design-exports/SteadyStrideOS_Redesign.html`
 
-This is UI/infrastructure work, not a user feature — but it's the highest-
-leverage single session we can run because it improves every existing AND
-every future screen.
-
----
-
-## Inspiration
-
-Target aesthetic: think Linear + Vercel dashboard + Notion, with a warm
-Indian-hospitality-industry personality. Not Stripe-style corporate, not
-Notion-style playful — something in between, trending modern.
-
-Reference products to study before building:
-
-- linear.app — density, typography, restrained color, motion
-- vercel.com/dashboard — hierarchy, chart treatment, empty states
-- posthog.com — multi-role internal tool with real data density
-- cal.com — clean forms with personality
+This is the canonical visual language for Stride OS. Every component and page must use these tokens. Values come directly from the Claude Design prototype.
 
 ---
 
-## Brand Tokens
+## Tokens — Light Mode (default)
 
-Define these as CSS variables, used by Tailwind + shadcn/ui.
+```css
+:root {
+  /* Paper / Ink palette */
+  --paper: #f6f3ec;
+  --paper-2: #efeae0;
+  --ink: #14171c;
+  --ink-2: #2a2f38;
+  --muted: #6c7280;
+  --line: #e2dccf;
+  --line-strong: #cfc6b3;
+  --card: #ffffff;
 
-### Color system
+  /* Accent — coral */
+  --accent: #ff5b3a;
+  --accent-soft: #ffe4dc;
 
-- `--primary` — brand primary. Suggested: a warm saffron/amber
-  (restaurant industry hint without being cliché). HSL to be chosen in the
-  session; currently placeholder.
-- `--secondary` — deep neutral / muted accent
-- `--success` — green
-- `--warning` — amber
-- `--danger` — red
-- Full neutral scale (50–950) for backgrounds, borders, text
-- Both light and dark variants defined
+  /* Semantic */
+  --green: #3a7d4e;
+  --green-soft: #d8ecdc;
+  --amber: #b8862c;
+  --amber-soft: #f4e7c1;
+  --red: #c83a2c;
+  --red-soft: #f6dbd5;
+  --blue: #2a5cd6;
+  --blue-soft: #dbe4f7;
+  --violet: #5b3a9e;
+  --violet-soft: #e4dbf3;
 
-Use HSL, not hex, so shadcn's alpha-mixing works correctly:
-`--primary: 32 95% 44%;` (example: saffron)
+  /* Geometry */
+  --radius: 10px;
+  --pad: 16px;
 
-### Typography
+  /* Elevation */
+  --shadow: 0 1px 0 rgba(20, 23, 28, 0.04), 0 0 0 1px var(--line);
+  --shadow-elev: 0 12px 32px -16px rgba(20, 23, 28, 0.18), 0 1px 0 rgba(20, 23, 28, 0.05);
+}
+```
 
-- Primary: **Inter** (or **Geist** if preferred — both sans with excellent numerals)
-- Monospace: **JetBrains Mono** (for numbers, IDs, code)
-- Scale: 12 / 13 / 14 / 16 / 18 / 20 / 24 / 32
-- Line heights: tight on headers, generous on body
-- Font weights used: 400, 500, 600 only. Avoid 700 except for rare headings.
+## Tokens — Dark Mode
 
-### Spacing & sizing
+```css
+[data-theme="dark"] {
+  --paper: #0e1014;
+  --paper-2: #14171c;
+  --ink: #f1ece1;
+  --ink-2: #c9c2b1;
+  --muted: #8a8f9a;
+  --line: #23272f;
+  --line-strong: #2f343d;
+  --card: #14171c;
 
-- Base unit: 4px
-- Container max-width: 1400px for list pages, 900px for forms, full-bleed for dashboards
-- Card border-radius: 10px (softer than shadcn default 8)
-- Input height: 36px
-- Focus rings: 2px, primary color at 40% alpha
+  --accent: #ff7a5c;
+  --accent-soft: #3a1d15;
 
-### Elevation
+  --green: #6dc188;
+  --green-soft: #16291c;
+  --amber: #e0b35a;
+  --amber-soft: #2c2412;
+  --red: #ed6e60;
+  --red-soft: #2c1612;
+  --blue: #6e94f0;
+  --blue-soft: #161e34;
+  --violet: #a48de0;
+  --violet-soft: #1f1830;
 
-- Cards: no heavy shadows; use 1px border + subtle background shift
-- Popovers / dialogs: single soft shadow
-- Dark mode: use border tints instead of shadows
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 0 0 1px var(--line);
+  --shadow-elev: 0 16px 36px -18px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line);
+}
+```
 
 ---
 
-## Dark Mode — Correct Implementation
+## Typography
 
-Most likely-broken pieces; audit and fix all:
+Three families:
 
-1. `next-themes` installed; `<ThemeProvider attribute="class" defaultTheme="system" enableSystem>` wraps `<body>` in `app/layout.tsx`
-2. `<html lang="en" suppressHydrationWarning>` at root
-3. Tailwind config `darkMode: ["class"]`
-4. `globals.css` defines `:root { --foo: ... }` and `.dark { --foo: ... }` with full token set
-5. All components reference tokens via Tailwind classes (`bg-background`, `text-foreground`) — never hardcoded colors
-6. Theme toggle in the app shell (top-right, icon button with Sun/Moon/Monitor options from lucide-react) using `useTheme()` from `next-themes`
-7. System preference respected on first load; choice persists in localStorage
-8. No flash-of-wrong-theme on refresh (the `suppressHydrationWarning` + class-based strategy handles this; verify)
+- **Inter** — body, UI text, numbers (with `tabular-nums`)
+- **Instrument Serif** (italic) — page titles only, large display
+- **JetBrains Mono** — numeric values where consistency matters (table numbers, IDs, amounts)
+
+Sizes: 10 / 11 / 12 / 13 / 14 / 16 / 18 / 24 / 32 / 44px.
+
+Headings:
+
+- **Page title:** 44px Instrument Serif italic, weight 400, letter-spacing -0.02em
+- **Page eyebrow:** 11px Inter, uppercase, letter-spacing 0.18em, color `--accent`, weight 600
+- **Card title:** 12px Inter, uppercase, letter-spacing 0.12em, color `--muted`, weight 600
+
+Body: 14px Inter, weight 400, line-height 1.4.
+
+Add via `next/font` (Inter is already present):
+
+```typescript
+import { Instrument_Serif, JetBrains_Mono } from "next/font/google";
+const serif = Instrument_Serif({
+  weight: "400",
+  style: "italic",
+  subsets: ["latin"],
+  variable: "--font-serif",
+});
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+```
 
 ---
 
-## Layout Refresh
+## Layout
 
-### App shell (`apps/web/app/(app)/layout.tsx`)
+- App grid: `grid-template-columns: 248px 1fr` (sidebar + main)
+- Sidebar collapsed (rail) variant: 64px wide
+- Top bar height: 64px, sticky, blurred background
+- Page content max-width: 1480px
+- Page padding: 24px 28px
 
-Current: basic sidebar. Upgrade to:
+---
 
-- **Collapsible sidebar** (icon-only collapsed state) with smooth transition
-- **Sidebar sections:**
-  - Top: Stride OS wordmark + small outlet switcher (if partner has multiple outlets visible)
-  - Middle: nav links with icons + labels
-  - Bottom: current user avatar + theme toggle + sign out menu
-- **Top bar:** breadcrumb, search (cmd-K placeholder — no behavior yet), notifications icon (placeholder)
-- **Main area:** consistent padding, max-width per page type
+## Components
 
-### Navigation icons
+### Card
 
-Use `lucide-react` consistently:
+```css
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--pad);
+}
+.card.elev {
+  box-shadow: var(--shadow-elev);
+}
+```
+
+### Buttons
+
+- `.btn` — default, white background, line border
+- `.btn.primary` — ink background, paper text
+- `.btn.accent` — coral background, white text
+- `.btn.ghost` — transparent
+- `.btn.sm` — smaller padding
+- `.btn.danger` — soft-red background, red text
+
+### Pills
+
+- `.pill` — neutral default
+- `.pill.green` / `.red` / `.amber` / `.blue` / `.violet` — semantic colors using soft backgrounds
+
+### Stats
+
+```css
+.stat-num {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stat-num.lg {
+  font-size: 44px;
+}
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.delta {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.delta.up {
+  color: var(--green);
+}
+.delta.down {
+  color: var(--red);
+}
+```
+
+### Sparkline
+
+40px tall, full card width. Use Recharts `<AreaChart>` with no axes, no grid, accent color fill.
+
+### Density tokens
+
+```css
+[data-density="compact"] {
+  --pad: 12px;
+}
+[data-density="cozy"] {
+  --pad: 16px;
+} /* default */
+[data-density="comfy"] {
+  --pad: 22px;
+}
+```
+
+---
+
+## Sidebar Structure (v3)
+
+Three sections:
+
+```
+MAIN
+  Dashboard
+  Sales            (Sales Analytics deep-dive)
+  Expenses         ← new
+  Inventory        ← new
+  Customers
+
+MANAGE
+  Outlets
+  Employees
+  P&L Reports
+
+SYSTEM
+  Ingest
+  Admin            ← new
+```
+
+Active item: `--ink` background, `--paper` text. Hover: `--paper-2` background.
+
+---
+
+## Navigation Icons (lucide-react)
 
 - Dashboard → `LayoutDashboard`
+- Sales → `TrendingUp`
+- Expenses → `Receipt` (or `Wallet`)
+- Inventory → `Package` (or `Box`)
+- Customers → `Users`
 - Outlets → `Store`
-- Employees → `Users`
-- Contractors → `HardHat`
+- Employees → `UserCog`
+- P&L Reports → `FileText`
 - Ingest → `Upload`
-- Settings → `Settings`
+- Admin → `Settings`
 
 ---
 
-## Component Upgrades
+## Implementation Checklist
 
-Replace or enhance in `packages/ui`:
+- [ ] Replace `globals.css` token block with values above (light + dark)
+- [ ] Update Tailwind config to expose all tokens via `theme.extend.colors`
+- [ ] Add Instrument Serif and JetBrains Mono via `next/font`
+- [ ] Update `<PageHeader>` component to use the eyebrow + serif title pattern
+- [ ] Update sidebar component to use the three-section structure
+- [ ] Add density token support (default `cozy`)
+- [ ] Audit every page — no hardcoded colors, all via tokens
+- [ ] Ensure dark mode toggle works flawlessly with no flash on reload
 
-### Cards
-
-- Add subtle hover state (border lift, not shadow)
-- Add variant: `interactive` for clickable cards
-
-### Tables
-
-- Zebra striping OFF by default (cleaner), ON as opt-in
-- Sticky header
-- Row hover state
-- Empty state: centered illustration + message + CTA
-
-### Forms
-
-- Labels above inputs (not floating)
-- Helper text muted, small, below input
-- Error text in danger color with an inline icon
-- Inline validation on blur, not on every keystroke
-
-### Status badges
-
-- Solid dot + text pattern (LED-style), not pill-shaped blocks
-- Matches Linear's approach
-
-### Empty states
-
-- Every list page gets a designed empty state
-- Pattern: subtle SVG illustration + heading + description + primary CTA
-
-### Loading states
-
-- Replace generic skeletons with content-shaped skeletons that match the actual layout
+```
 
 ---
-
-## Concrete Page-Level Changes
-
-### `/outlets` (list)
-
-- Grid of cards with cover photo on top (requires Outlet Photos feature)
-- Name (large), brand (small muted), status dot + label
-- Metadata row: 3 icons (Store / MapPin / Phone) with compact values
-- Hover: card lifts slightly
-
-### `/outlets/[id]` (detail)
-
-- Hero: cover photo wide, overlaid name + status badge
-- Tabs styled like Linear (underline, not boxed)
-- Overview tab: metadata in a two-column grid, each field with icon + label + value
-- Photo gallery in the overview tab
-
-### `/employees` (list)
-
-- Data-dense table by default (not cards) — feels more like a real ops tool
-- Columns: Avatar + Name / Role / Position / Outlet / Phone / Joined / Status
-- Filters as chips above the table
-- Search input with cmd-K keyboard hint on the right
-
-### Login page
-
-- Full-bleed, centered card with product wordmark
-- Subtle gradient background that respects theme
-- "Sign in with Google" as the only button
-
----
-
-## Implementation Order (one session, three phases)
-
-### Phase 1 — Tokens + Dark Mode
-
-- Define CSS variables in `globals.css`
-- Fix `ThemeProvider` wiring
-- Add theme toggle to app shell
-- Verify every existing page in both modes
-- Commit: `feat(design): tokens, dark mode, theme toggle`
-
-### Phase 2 — Component Upgrades
-
-- Upgrade Card, Table, Form, Badge, Empty-state primitives in `packages/ui`
-- Update shadcn components to reference new tokens
-- Commit: `feat(design): refreshed component primitives`
-
-### Phase 3 — Page-Level Polish
-
-- Outlet list/detail
-- Employee list/detail
-- Contractor list/detail
-- App shell (sidebar + top bar)
-- Login page
-- Empty states everywhere
-- Commit: `feat(design): page-level layout and polish`
-
----
-
-## Out of Scope
-
-- Marketing site / public landing page (doesn't exist yet, different domain)
-- Mobile app (Phase 3)
-- Animations beyond subtle hover/focus transitions
-- Custom illustrations (use `lucide-react` + simple SVGs only)
-
----
-
-## Definition of Done
-
-- Every existing page looks deliberately designed, not scaffolded
-- Dark mode works flawlessly across every page; no flash on reload; toggle persists
-- Zero hardcoded colors in components; all via CSS variables
-- `packages/ui` components are the only source of truth for visual primitives
-- CLAUDE.md updated with a "Design System" section listing tokens and primitives to reuse
-- Build + typecheck clean
+```

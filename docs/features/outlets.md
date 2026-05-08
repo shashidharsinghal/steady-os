@@ -1,5 +1,7 @@
 # Feature: Outlets
 
+> **Status update (2026-05-08):** v2.1 shipped. Visual layer inherits from `design-system.md` v3 — no per-spec changes needed.
+
 Outlets are the core entity in Stride OS — every employee, sale, expense,
 and document will eventually be tied to an outlet. This feature lets partners
 manage the franchise portfolio and gives managers a read-only view of the

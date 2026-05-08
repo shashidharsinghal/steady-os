@@ -19,6 +19,7 @@ import {
   CancelRunButton,
   RollbackButton,
   DeleteRunButton,
+  SoftDeleteRunButton,
 } from "../_components/RunActions";
 import { PnlPreviewCard } from "../_components/PnlPreviewCard";
 import { PetpoojaDailyPreviewCard } from "../_components/PetpoojaDailyPreviewCard";
@@ -297,7 +298,10 @@ function StatusPanel({
             <p className="text-muted-foreground mb-4 text-sm">
               Rolling back will permanently delete all data written by this run.
             </p>
-            <RollbackButton run={run} />
+            <div className="flex flex-wrap gap-3">
+              <RollbackButton run={run} />
+              <SoftDeleteRunButton run={run} />
+            </div>
           </div>
         </CardContent>
       </Card>

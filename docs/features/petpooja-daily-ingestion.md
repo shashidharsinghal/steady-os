@@ -1,12 +1,15 @@
 # Feature: Petpooja Daily Ingestion (Item + Payment Reports)
 
 **Status:** Draft
-**Last updated:** 2026-04-29
-**Related:** `ingestion-framework.md`, `sales-ingestion.md`, `gmail-auto-ingest.md`
-**Depends on:** Ingestion framework; existing `sales_orders` and `sales_line_items`
-tables from sales-ingestion.md
-**Supersedes:** The Petpooja Orders Master Report parser for daily ingestion.
-Orders Master remains usable for historical backfill only.
+
+> **Status update (2026-05-08):** v2.1 shipped. Daily Petpooja ingestion via Gmail is live.
+> **v3 navigation update:** Manual upload UI stays at `/ingest`. Gmail connection management moves to `/admin/integrations`. Internal API endpoints unchanged.
+> **Last updated:** 2026-04-29
+> **Related:** `ingestion-framework.md`, `sales-ingestion.md`, `gmail-auto-ingest.md`
+> **Depends on:** Ingestion framework; existing `sales_orders` and `sales_line_items`
+> tables from sales-ingestion.md
+> **Supersedes:** The Petpooja Orders Master Report parser for daily ingestion.
+> Orders Master remains usable for historical backfill only.
 
 ---
 

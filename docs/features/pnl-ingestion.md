@@ -565,3 +565,27 @@ Add this comment in `apps/web/app/(app)/dashboard/page.tsx`:
 - `pnpm build && pnpm typecheck` clean
 - Integration test passes against the real fixture file
 - CLAUDE.md updated with P&L Ingestion in Implemented Features
+
+## Integration with Expenses Module (v3)
+
+When a P&L PDF is committed, line items mapped to operating-expense
+categories propagate as rows in the `expenses` table:
+
+- For each line item with category in {rent, salaries, utilities,
+  marketing, logistics, maintenance, franchise_fee, other}:
+  - Upsert an `expenses` row keyed by `(outlet_id, source_pnl_period, category, subcategory)`
+  - `source = 'petpooja_pnl'`
+  - `status = 'paid'`
+  - `paid_date = pnl_period_end`
+  - `description = "<category> · <pnl_period_label>"` (e.g., "Rent · Mar 2026")
+
+This avoids partners manually re-entering rent, utilities, etc. that
+already appear on the P&L. Manual entries with overlapping date ranges
+are not affected — they coexist with the P&L-derived rows.
+
+Implementation:
+
+- `apps/web/app/api/pnl/commit/route.ts` calls `propagateToExpenses(pnlId)`
+  after successful commit
+- `propagateToExpenses` is idempotent — re-running on the same P&L
+  upserts the same rows

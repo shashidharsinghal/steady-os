@@ -15,7 +15,7 @@ export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="border-border/80 bg-background/80 inline-flex items-center rounded-[10px] border p-1">
+    <div className="border-border bg-card shadow-card inline-flex items-center rounded-lg border p-1">
       {OPTIONS.map(({ value, label, icon: Icon }) => (
         <Button
           key={value}
@@ -23,8 +23,9 @@ export function ThemeToggle() {
           variant="ghost"
           size="sm"
           className={cn(
-            "h-8 rounded-[8px] px-2.5 text-xs",
-            theme === value && "bg-accent text-accent-foreground"
+            "h-8 rounded-md border-transparent px-2.5 text-xs",
+            theme === value &&
+              "bg-foreground text-background hover:bg-foreground hover:text-background"
           )}
           onClick={() => setTheme(value)}
           aria-label={`Set theme to ${label}`}

@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/auth";
-import type { GmailConnectionStatus } from "./actions";
-import { GmailAutoSyncSection } from "./_components/GmailAutoSyncSection";
 import { RecentRunsTable } from "./_components/RecentRunsTable";
 import { UploadDropzone } from "./_components/UploadDropzone";
 import { SoftDeleteRunsManager } from "./_components/SoftDeleteRunsManager";
+import { GmailAutoSyncSection } from "./_components/GmailAutoSyncSection";
 import type { Tables } from "@stride-os/db";
+import { PageHeader } from "@/components/layout/page-header";
+import type { GmailConnectionStatus } from "./actions";
 
 type Run = Tables<"ingestion_runs">;
 type Outlet = Pick<Tables<"outlets">, "id" | "name" | "brand">;
@@ -93,19 +94,33 @@ export default async function IngestPage({ searchParams }: IngestPageProps) {
 
   if (role !== "partner") redirect("/dashboard");
 
+  const tab = readParam(resolvedSearchParams, "tab") ?? "all";
+  const page = Math.max(1, Number(readParam(resolvedSearchParams, "page") ?? "1") || 1);
+  const pageSize = 25;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let runsQuery = supabase
+    .from("ingestion_runs")
+    .select("*", { count: "exact" })
+    .neq("status", "purged")
+    .is("deleted_at", null)
+    .order("uploaded_at", { ascending: false })
+    .range(from, to);
+  if (tab === "archived") runsQuery = runsQuery.not("archived_at", "is", null);
+  else runsQuery = runsQuery.is("archived_at", null);
+  if (tab === "manual") runsQuery = runsQuery.eq("trigger_source", "manual_upload");
+  if (tab === "auto") runsQuery = runsQuery.eq("trigger_source", "gmail_auto");
+  if (tab === "backfill") runsQuery = runsQuery.eq("trigger_source", "gmail_backfill");
+
   const [
-    { data: recentRuns },
+    { data: recentRuns, count: runCount },
     { data: committedRuns },
     { data: deletedRuns },
     { data: purgedRuns },
     { data: outlets },
   ] = await Promise.all([
-    supabase
-      .from("ingestion_runs")
-      .select("*")
-      .neq("status", "purged")
-      .is("deleted_at", null)
-      .order("uploaded_at", { ascending: false }),
+    runsQuery,
     supabase
       .from("ingestion_runs")
       .select("*")
@@ -130,7 +145,7 @@ export default async function IngestPage({ searchParams }: IngestPageProps) {
     supabase.from("outlets").select("id, name, brand").is("archived_at", null).order("name"),
   ]);
 
-  const recent = ((recentRuns ?? []) as Run[]).slice(0, 50);
+  const recent = (recentRuns ?? []) as Run[];
   const committed = (committedRuns ?? []) as Run[];
   const deleted = (deletedRuns ?? []) as Run[];
   const purged = (purgedRuns ?? []) as Run[];
@@ -254,12 +269,21 @@ export default async function IngestPage({ searchParams }: IngestPageProps) {
 
   return (
     <div className="space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Ingest</h1>
-        <p className="text-muted-foreground text-sm">
-          Upload Petpooja, Pine Labs, aggregator reports, and franchise P&L PDFs.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="System · Data intake"
+        title="Ingest"
+        subtitle="Upload Petpooja, Pine Labs, aggregator reports, and franchise P&L PDFs."
+      />
+
+      <a
+        href="/admin/integrations#gmail"
+        className="border-border bg-card shadow-card inline-flex rounded-full border px-4 py-2 text-sm"
+      >
+        Gmail · {gmailConnection?.status === "active" ? "Connected" : "Configure in Admin"}
+        {gmailConnection?.last_sync_at
+          ? ` · Last sync ${new Date(gmailConnection.last_sync_at).toLocaleString("en-IN")}`
+          : ""}
+      </a>
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Gmail Auto-Sync</h2>
@@ -280,8 +304,45 @@ export default async function IngestPage({ searchParams }: IngestPageProps) {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-base font-semibold">Recent Runs</h2>
-        <RecentRunsTable runs={recent} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">Runs</h2>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["all", "All"],
+              ["manual", "Manual"],
+              ["auto", "Auto-synced"],
+              ["backfill", "Backfill"],
+              ["archived", "Archived"],
+            ].map(([value, label]) => (
+              <a
+                key={value}
+                href={`/ingest?tab=${value}${selectedOutlet ? `&outletId=${selectedOutlet.id}` : ""}`}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${tab === value ? "bg-foreground text-background" : "bg-card text-muted-foreground"}`}
+              >
+                {label}
+              </a>
+            ))}
+          </div>
+        </div>
+        <RecentRunsTable runs={recent} archived={tab === "archived"} />
+        <div className="text-muted-foreground flex items-center justify-between text-sm">
+          <span>
+            Showing {runCount === 0 ? 0 : from + 1}-{Math.min(to + 1, runCount ?? 0)} of{" "}
+            {runCount ?? 0}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <a className="rounded border px-3 py-1" href={`/ingest?tab=${tab}&page=${page - 1}`}>
+                Previous
+              </a>
+            ) : null}
+            {(runCount ?? 0) > to + 1 ? (
+              <a className="rounded border px-3 py-1" href={`/ingest?tab=${tab}&page=${page + 1}`}>
+                Next
+              </a>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       <SoftDeleteRunsManager committedRuns={committed} deletedRuns={deleted} purgedRuns={purged} />

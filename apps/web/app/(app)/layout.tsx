@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Sidebar } from "@/components/layout/sidebar";
-import { TopBar } from "@/components/layout/top-bar";
+import { AppShell } from "@/components/layout/app-shell";
 import { getRole } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -36,19 +35,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const userEmail = user.email ?? "Signed in";
 
   return (
-    <div className="flex min-h-screen bg-transparent">
-      <Sidebar
-        userName={userName}
-        userEmail={userEmail}
-        role={role}
-        outletCount={outletCount ?? 0}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title="Stride OS" subtitle="Operations dashboard for your live portfolio" />
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto w-full max-w-[1400px] px-6 py-6">{children}</div>
-        </main>
-      </div>
-    </div>
+    <AppShell userName={userName} userEmail={userEmail} role={role} outletCount={outletCount ?? 0}>
+      {children}
+    </AppShell>
   );
 }

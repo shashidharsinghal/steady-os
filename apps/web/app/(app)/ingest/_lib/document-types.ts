@@ -59,23 +59,23 @@ export const INGEST_DOCUMENT_TYPE_OPTIONS: IngestDocumentTypeOption[] = [
   {
     value: "utility_gas_bill",
     label: "Gas bill",
-    description: "Utility bill ingestion is planned next.",
+    description: "Commercial LPG and utility gas invoices can be scanned into pending bills.",
     sourceType: "utility_bill_gas",
-    available: false,
+    available: true,
   },
   {
     value: "utility_rent_bill",
     label: "Rent invoice",
-    description: "Rent and landlord invoice ingestion is planned next.",
+    description: "Rent and landlord invoices can be scanned into pending bills.",
     sourceType: "utility_bill_rent",
-    available: false,
+    available: true,
   },
   {
     value: "utility_cam_bill",
     label: "CAM / maintenance",
-    description: "CAM and mall-maintenance invoice ingestion is planned next.",
+    description: "CAM and maintenance invoices use generic bill scanning and may need review.",
     sourceType: "utility_bill_cam",
-    available: false,
+    available: true,
   },
   {
     value: "pinelabs_report",
@@ -95,9 +95,9 @@ export const INGEST_SOURCE_PICKER_OPTIONS = [
   { sourceType: "swiggy_annexure", displayName: "Swiggy report" },
   { sourceType: "zomato_annexure", displayName: "Zomato report" },
   { sourceType: "franchise_pnl_pdf", displayName: "P&L" },
-  { sourceType: "utility_bill_gas", displayName: "Gas bill (coming soon)" },
-  { sourceType: "utility_bill_rent", displayName: "Rent invoice (coming soon)" },
-  { sourceType: "utility_bill_cam", displayName: "CAM / maintenance (coming soon)" },
+  { sourceType: "utility_bill_gas", displayName: "Gas bill" },
+  { sourceType: "utility_bill_rent", displayName: "Rent invoice" },
+  { sourceType: "utility_bill_cam", displayName: "CAM / maintenance" },
 ] as const;
 
 export function resolveDocumentTypeSourceType(documentType: string | null): string | null {

@@ -6,6 +6,7 @@ import { getRole } from "@/lib/auth";
 import type { Outlet, OutletPhoto } from "@stride-os/shared";
 import { getSignedOutletPhotoUrls } from "./photo-utils";
 import { OutletListItem } from "./_components/OutletListItem";
+import { PageHeader } from "@/components/layout/page-header";
 
 export default async function OutletsPage() {
   const [supabase, role] = await Promise.all([createClient(), getRole()]);
@@ -35,22 +36,21 @@ export default async function OutletsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Outlets</h1>
-          <p className="text-muted-foreground text-sm">
-            Portfolio view with cover photos, contact details, and live status.
-          </p>
-        </div>
-        {isPartner && (
-          <Button asChild size="sm">
-            <Link href="/outlets/new">
-              <Plus className="mr-1 h-4 w-4" />
-              New outlet
-            </Link>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Manage · Portfolio"
+        title="Outlets"
+        subtitle="Portfolio view with cover photos, contact details, and live status."
+        actions={
+          isPartner ? (
+            <Button asChild variant="accent">
+              <Link href="/outlets/new">
+                <Plus className="mr-1 h-4 w-4" />
+                New outlet
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
 
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">

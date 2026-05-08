@@ -218,6 +218,49 @@ async function deleteRunArtifacts(
 // ─── Upload ──────────────────────────────────────────────────────────────────
 
 export async function uploadFile(formData: FormData): Promise<{ runId: string }> {
+  const selectedDocumentType = (formData.get("document_type") as string | null) ?? "auto_detect";
+  const manualSourceType = resolveDocumentTypeSourceType(selectedDocumentType);
+  const { runId } = await uploadFileWithoutProcessing(formData);
+  await autoProcessRun(runId, manualSourceType ?? undefined);
+  return { runId };
+}
+
+export async function uploadPairedPetpoojaReports(
+  formData: FormData
+): Promise<{ itemRunId: string; paymentRunId: string }> {
+  await requirePartner();
+  const itemFile = formData.get("item_file") as File | null;
+  const paymentFile = formData.get("payment_file") as File | null;
+
+  if (!itemFile && !paymentFile) throw new Error("Choose at least one Petpooja daily report.");
+
+  const outletId = (formData.get("outlet_id") as string | null) ?? "";
+  if (!outletId) throw new Error("Select an outlet before uploading Petpooja reports.");
+
+  const uploadOne = async (file: File, documentType: string) => {
+    const single = new FormData();
+    single.append("file", file);
+    single.append("outlet_id", outletId);
+    single.append("document_type", documentType);
+    single.append("trigger_source", "manual_upload");
+    return uploadFileWithoutProcessing(single);
+  };
+
+  const [itemResult, paymentResult] = await Promise.all([
+    itemFile ? uploadOne(itemFile, "petpooja_item_bill") : Promise.resolve(null),
+    paymentFile ? uploadOne(paymentFile, "petpooja_payment_summary") : Promise.resolve(null),
+  ]);
+
+  if (itemResult) await parseRun(itemResult.runId, "petpooja_item_bill");
+  if (paymentResult) await parseRun(paymentResult.runId, "petpooja_payment_summary");
+
+  return {
+    itemRunId: itemResult?.runId ?? "",
+    paymentRunId: paymentResult?.runId ?? "",
+  };
+}
+
+async function uploadFileWithoutProcessing(formData: FormData): Promise<{ runId: string }> {
   const userId = await requirePartner();
 
   const file = formData.get("file") as File | null;
@@ -242,7 +285,6 @@ export async function uploadFile(formData: FormData): Promise<{ runId: string }>
     throw new Error("Unsupported ingestion trigger source.");
   }
 
-  // Classify using registered parsers
   const sampleBuffer = fileBuffer.subarray(0, 50 * 1024);
   const parsers = getAllParsers();
 
@@ -324,39 +366,8 @@ export async function uploadFile(formData: FormData): Promise<{ runId: string }>
   return { runId };
 }
 
-export async function uploadPairedPetpoojaReports(
-  formData: FormData
-): Promise<{ itemRunId: string; paymentRunId: string }> {
-  await requirePartner();
-  const itemFile = formData.get("item_file") as File | null;
-  const paymentFile = formData.get("payment_file") as File | null;
-
-  if (!itemFile && !paymentFile) throw new Error("Choose at least one Petpooja daily report.");
-
-  const outletId = (formData.get("outlet_id") as string | null) ?? "";
-  if (!outletId) throw new Error("Select an outlet before uploading Petpooja reports.");
-
-  const uploadOne = async (file: File, documentType: string) => {
-    const single = new FormData();
-    single.append("file", file);
-    single.append("outlet_id", outletId);
-    single.append("document_type", documentType);
-    single.append("trigger_source", "manual_upload");
-    return uploadFile(single);
-  };
-
-  const [itemResult, paymentResult] = await Promise.all([
-    itemFile ? uploadOne(itemFile, "petpooja_item_bill") : Promise.resolve(null),
-    paymentFile ? uploadOne(paymentFile, "petpooja_payment_summary") : Promise.resolve(null),
-  ]);
-
-  if (itemResult) await parseRun(itemResult.runId, "petpooja_item_bill");
-  if (paymentResult) await parseRun(paymentResult.runId, "petpooja_payment_summary");
-
-  return {
-    itemRunId: itemResult?.runId ?? "",
-    paymentRunId: paymentResult?.runId ?? "",
-  };
+async function autoProcessRun(runId: string, sourceTypeOverride?: string): Promise<void> {
+  await parseRun(runId, sourceTypeOverride);
 }
 
 // ─── Parse ───────────────────────────────────────────────────────────────────
@@ -464,6 +475,8 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
         }) as unknown as import("@stride-os/db").Json,
       })
       .eq("id", runId);
+
+    await commitRun(runId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "An unexpected error occurred.";
     await supabase
@@ -782,6 +795,52 @@ export async function deleteRuns(runIds: string[]): Promise<void> {
   if (deleteError) throw new Error(deleteError.message);
 
   revalidateOperationalSurfaces();
+}
+
+export async function archiveRuns(runIds: string[]): Promise<{ success: number; failed: number }> {
+  await requirePartner();
+  const uniqueRunIds = Array.from(new Set(runIds)).filter(Boolean);
+  if (uniqueRunIds.length === 0) return { success: 0, failed: 0 };
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .from("ingestion_runs")
+    .update({ archived_at: new Date().toISOString() })
+    .in("id", uniqueRunIds)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+  revalidateOperationalSurfaces();
+  return { success: count ?? uniqueRunIds.length, failed: 0 };
+}
+
+export async function unarchiveRuns(
+  runIds: string[]
+): Promise<{ success: number; failed: number }> {
+  await requirePartner();
+  const uniqueRunIds = Array.from(new Set(runIds)).filter(Boolean);
+  if (uniqueRunIds.length === 0) return { success: 0, failed: 0 };
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .from("ingestion_runs")
+    .update({ archived_at: null })
+    .in("id", uniqueRunIds)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+  revalidateOperationalSurfaces();
+  return { success: count ?? uniqueRunIds.length, failed: 0 };
+}
+
+export async function archiveOldRuns(): Promise<{ archived: number }> {
+  const supabase = await createClient();
+  const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("ingestion_runs")
+    .update({ archived_at: new Date().toISOString() })
+    .lt("created_at", cutoff)
+    .is("archived_at", null)
+    .is("deleted_at", null)
+    .in("status", ["committed", "failed"]);
+  if (error) throw new Error(error.message);
+  return { archived: count ?? 0 };
 }
 
 export type DeleteImpact = {

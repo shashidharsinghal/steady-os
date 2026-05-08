@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +17,7 @@ import {
   Textarea,
 } from "@stride-os/ui";
 import { toast } from "sonner";
-import { parseRun, commitRun, cancelRun, rollbackRun, deleteRun } from "../actions";
+import { parseRun, commitRun, cancelRun, rollbackRun, deleteRun, softDeleteRun } from "../actions";
 import type { Tables } from "@stride-os/db";
 import { INGEST_SOURCE_PICKER_OPTIONS } from "../_lib/document-types";
 
@@ -187,6 +187,50 @@ export function DeleteRunButton({ run }: { run: Run }) {
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={handle} disabled={isPending}>
             {isPending ? "Deleting…" : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export function SoftDeleteRunButton({ run }: { run: Run }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  function handle() {
+    startTransition(async () => {
+      try {
+        await softDeleteRun(run.id);
+        toast.success("Report marked for deletion.");
+        router.push("/ingest");
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Delete failed.");
+      }
+    });
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline">
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete report
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this report?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This report will be removed from live analytics immediately and can be restored for 30
+            days from the deleted runs list.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handle} disabled={isPending}>
+            {isPending ? "Deleting…" : "Delete report"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

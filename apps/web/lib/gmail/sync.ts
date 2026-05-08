@@ -4,6 +4,10 @@ import type { Json, Tables } from "@stride-os/db";
 import { getAllParsers, getParser } from "@stride-os/ingestion";
 import type { ParserSupabaseClient } from "@stride-os/ingestion";
 import { refreshGmailAccessToken } from "@/lib/gmail/oauth";
+import {
+  extractInvoiceFromAttachment as extractInvoiceFromDocument,
+  type InvoiceExtraction,
+} from "@/lib/openai/invoice-extraction";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type GmailConnectionRow = Tables<"gmail_connections">;
@@ -34,6 +38,7 @@ type GmailMessagePayload = {
   id?: string;
   threadId?: string;
   internalDate?: string;
+  snippet?: string;
   payload?: GmailMessagePart;
 };
 
@@ -177,6 +182,39 @@ function collectAttachmentCandidates(
   return candidates;
 }
 
+function stripHtml(value: string): string {
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function collectMessageBodyText(part: GmailMessagePart | undefined): string[] {
+  if (!part) return [];
+  const parts: string[] = [];
+  const mime = part.mimeType?.toLowerCase() ?? "";
+  const inlineData = part.body?.data;
+
+  if (inlineData && (mime === "text/plain" || mime === "text/html")) {
+    const decoded = decodeBase64Url(inlineData).toString("utf8");
+    parts.push(mime === "text/html" ? stripHtml(decoded) : decoded.trim());
+  }
+
+  for (const child of part.parts ?? []) {
+    parts.push(...collectMessageBodyText(child));
+  }
+
+  return parts.filter(Boolean);
+}
+
 function buildAfterQueryTimestamp(lastSyncAt: string | null, businessDate?: string | null): number {
   if (businessDate) {
     return Math.floor(new Date(`${businessDate}T00:00:00+05:30`).getTime() / 1000);
@@ -196,13 +234,13 @@ function buildGmailQuery(args: {
   businessDate?: string | null;
 }): string {
   const parts = [
-    "from:petpooja.com",
     `after:${buildAfterQueryTimestamp(args.lastSyncAt, args.businessDate)}`,
     "has:attachment",
     "(",
     '"Report Notification: Item Wise Report"',
     "OR",
     '"Report Notification: Payment Wise Summary"',
+    'OR invoice OR bill OR receipt OR "tax invoice" OR "payment due" OR rent OR lease OR maintenance OR CAM OR utility OR utilities OR electricity OR water OR LPG OR gas',
     ")",
   ];
 
@@ -210,6 +248,213 @@ function buildGmailQuery(args: {
   if (before) parts.push(`before:${before}`);
 
   return parts.join(" ");
+}
+
+function isInvoiceSubject(subject: string): boolean {
+  return /\b(invoice|bill|payment due|receipt|tax invoice|rent|lease|maintenance|cam|utility|utilities|electricity|water|lpg|gas)\b/i.test(
+    subject
+  );
+}
+
+function isInvoiceAttachment(candidate: GmailAttachmentCandidate): boolean {
+  const name = candidate.fileName.toLowerCase();
+  const mime = candidate.mimeType?.toLowerCase() ?? "";
+  return mime.includes("pdf") || mime.startsWith("image/") || /\.(pdf|png|jpe?g|webp)$/i.test(name);
+}
+async function extractInvoiceFromAttachment(args: {
+  subject: string;
+  sender: string;
+  internalDate: string | null;
+  fileName: string;
+  mimeType: string | null;
+  fileBuffer: Buffer;
+  bodyText?: string | null;
+}): Promise<InvoiceExtraction> {
+  return extractInvoiceFromDocument(args);
+}
+
+async function uploadInvoiceAttachment(args: {
+  outletId: string;
+  messageId: string;
+  fileName: string;
+  mimeType: string | null;
+  fileBuffer: Buffer;
+}): Promise<string | null> {
+  const safeName = args.fileName.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const now = new Date();
+  const storagePath = `expense-invoices/${args.outletId}/${now.getUTCFullYear()}/${String(
+    now.getUTCMonth() + 1
+  ).padStart(2, "0")}/${args.messageId}/${safeName}`;
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage
+    .from("ingestion-uploads")
+    .upload(storagePath, args.fileBuffer, {
+      contentType: args.mimeType || "application/octet-stream",
+      upsert: true,
+    });
+
+  if (error) return null;
+  return storagePath;
+}
+
+async function defaultExpenseCategoryId(outletId: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("expense_categories")
+    .select("id, name")
+    .eq("outlet_id", outletId)
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+  if (error) {
+    if (isMissingExpenseSchemaError(error.message)) return null;
+    throw new Error(error.message);
+  }
+  const categories = (data ?? []) as Array<{ id: string; name: string }>;
+  return (
+    categories.find((category) => /supplies|utilities|repairs/i.test(category.name))?.id ??
+    categories[0]?.id ??
+    null
+  );
+}
+
+function isMissingExpenseSchemaError(message: string): boolean {
+  return /schema cache|public\.expenses|public\.expense_categories|public\.activity_log|Could not find the table/i.test(
+    message
+  );
+}
+
+async function processInvoiceMessage(args: {
+  outlet: OutletRow;
+  connection: GmailConnectionRow;
+  syncRunId: string;
+  accessToken: string;
+  messageId: string;
+  subject: string;
+  sender: string;
+  internalDate: string | null;
+  bodyText: string | null;
+  candidates: GmailAttachmentCandidate[];
+}): Promise<boolean> {
+  if (!isInvoiceSubject(args.subject)) return false;
+  const invoiceAttachment = args.candidates.find(isInvoiceAttachment);
+  if (!invoiceAttachment) return false;
+
+  const categoryId = await defaultExpenseCategoryId(args.outlet.id);
+  if (!categoryId) return false;
+
+  const supabase = createAdminClient();
+  const existingExpense = await supabase
+    .from("expenses")
+    .select("id")
+    .eq("outlet_id", args.outlet.id)
+    .eq("source_email_id", args.messageId)
+    .maybeSingle();
+  if (existingExpense.error && !isMissingExpenseSchemaError(existingExpense.error.message)) {
+    throw new Error(existingExpense.error.message);
+  }
+  if (existingExpense.data?.id) {
+    await createProcessedMessage({
+      outletId: args.outlet.id,
+      connectionId: args.connection.id,
+      syncRunId: args.syncRunId,
+      messageId: args.messageId,
+      sourceType: "gmail_invoice",
+      subject: args.subject,
+      sender: args.sender,
+      receivedAt: args.internalDate,
+      ingestionRunId: null,
+    });
+    return true;
+  }
+
+  const attachmentBuffer = await getGmailAttachment(
+    args.accessToken,
+    args.messageId,
+    invoiceAttachment.attachmentId
+  );
+  const attachmentUrl = await uploadInvoiceAttachment({
+    outletId: args.outlet.id,
+    messageId: args.messageId,
+    fileName: invoiceAttachment.fileName,
+    mimeType: invoiceAttachment.mimeType,
+    fileBuffer: attachmentBuffer,
+  });
+  const extraction = await extractInvoiceFromAttachment({
+    subject: args.subject,
+    sender: args.sender,
+    internalDate: args.internalDate,
+    fileName: invoiceAttachment.fileName,
+    mimeType: invoiceAttachment.mimeType,
+    fileBuffer: attachmentBuffer,
+    bodyText: args.bodyText,
+  });
+  const isHighConfidence = extraction.confidence >= 90 && extraction.amountPaise > 0;
+  const status =
+    isHighConfidence && extraction.amountPaise <= args.outlet.auto_approve_under_paise
+      ? "approved"
+      : isHighConfidence
+        ? "auto_scanned"
+        : "needs_review";
+  const { data: expense, error } = await supabase
+    .from("expenses")
+    .insert({
+      outlet_id: args.outlet.id,
+      category_id: categoryId,
+      vendor_name: extraction.vendorName,
+      description: extraction.description,
+      for_item: extraction.forItem,
+      period_label: extraction.periodLabel,
+      amount_paise: extraction.amountPaise,
+      tax_paise: extraction.taxPaise,
+      total_paise: extraction.amountPaise + extraction.taxPaise,
+      status,
+      invoice_date: extraction.invoiceDate,
+      due_date: extraction.dueDate,
+      source: "gmail_scan",
+      source_email_id: args.messageId,
+      source_email_addr: extractSenderEmail(args.sender),
+      attachment_url: attachmentUrl,
+      extraction_confidence: extraction.confidence,
+      approved_at: status === "approved" ? new Date().toISOString() : null,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    if (isMissingExpenseSchemaError(error.message)) {
+      console.error("Skipping Gmail invoice scan because expense tables are unavailable.", {
+        outletId: args.outlet.id,
+        messageId: args.messageId,
+      });
+      return false;
+    }
+    throw new Error(error.message);
+  }
+
+  await createProcessedMessage({
+    outletId: args.outlet.id,
+    connectionId: args.connection.id,
+    syncRunId: args.syncRunId,
+    messageId: args.messageId,
+    sourceType: "gmail_invoice",
+    subject: args.subject,
+    sender: args.sender,
+    receivedAt: args.internalDate,
+    ingestionRunId: null,
+  });
+
+  const { error: activityError } = await supabase.from("activity_log").insert({
+    outlet_id: args.outlet.id,
+    user_id: args.connection.connected_by,
+    action: "gmail_invoice_scanned",
+    target_type: "expense",
+    target_id: expense?.id ?? null,
+    details: { subject: args.subject, confidence: extraction.confidence } as Json,
+  });
+  if (activityError && !isMissingExpenseSchemaError(activityError.message)) {
+    throw new Error(activityError.message);
+  }
+
+  return true;
 }
 
 export function buildGmailBackfillDates(startDate: string, endDate: string): string[] {
@@ -1024,11 +1269,34 @@ export async function syncGmailForOutlet(options: SyncOptions): Promise<SyncResu
       const internalDate = message.internalDate
         ? new Date(Number(message.internalDate)).toISOString()
         : null;
+      const bodyText =
+        [message.snippet?.trim() || "", ...collectMessageBodyText(payload)]
+          .filter(Boolean)
+          .join("\n\n")
+          .trim() || null;
 
       const matchingSubject = REPORT_PATTERNS.some((pattern) =>
         pattern.subjectPattern.test(subject)
       );
+      const candidates = collectAttachmentCandidates(payload);
       if (!matchingSubject) {
+        if (
+          await processInvoiceMessage({
+            outlet,
+            connection,
+            syncRunId: syncRun.id,
+            accessToken,
+            messageId: messageRef.id,
+            subject,
+            sender,
+            internalDate,
+            bodyText,
+            candidates,
+          })
+        ) {
+          emailsProcessed += 1;
+          continue;
+        }
         emailsSkipped += 1;
         continue;
       }
@@ -1065,7 +1333,6 @@ export async function syncGmailForOutlet(options: SyncOptions): Promise<SyncResu
         continue;
       }
 
-      const candidates = collectAttachmentCandidates(payload);
       for (const candidate of candidates) {
         const expectedSourceType = inferSourceType(subject, candidate.fileName);
         if (!expectedSourceType) continue;

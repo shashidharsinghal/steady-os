@@ -20,7 +20,9 @@ export function SignOutButton({ collapsed = false }: { collapsed?: boolean }) {
       type="button"
       variant="ghost"
       size={collapsed ? "icon" : "sm"}
-      className={collapsed ? "h-9 w-9" : "h-9 justify-start px-3"}
+      className={
+        collapsed ? "h-9 w-9" : "text-muted-foreground hover:text-foreground h-9 justify-start px-3"
+      }
       onClick={handleSignOut}
     >
       <LogOut className="h-4 w-4" />

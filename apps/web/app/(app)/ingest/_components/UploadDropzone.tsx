@@ -218,7 +218,7 @@ export function UploadDropzone({
 
           <div className="flex flex-wrap items-center gap-3">
             <Button type="button" onClick={handlePairedUpload} disabled={isPending}>
-              {isPending ? "Parsing…" : "Parse together"}
+              {isPending ? "Ingesting…" : "Upload and ingest"}
             </Button>
             {itemFile && paymentFile ? (
               <p className="text-xs text-emerald-700">Both reports selected.</p>
@@ -247,8 +247,10 @@ export function UploadDropzone({
         </div>
         {isPending ? (
           <div className="space-y-1">
-            <p className="text-sm font-medium">Uploading…</p>
-            <p className="text-muted-foreground text-xs">Please wait</p>
+            <p className="text-sm font-medium">Uploading and ingesting…</p>
+            <p className="text-muted-foreground text-xs">
+              Stride will parse and commit automatically.
+            </p>
           </div>
         ) : isDragActive ? (
           <div className="space-y-1">

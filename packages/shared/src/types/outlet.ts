@@ -11,9 +11,18 @@ export interface Outlet {
   gst_number: string | null;
   fssai_license: string | null;
   opened_at: string | null;
+  opened_on: string | null;
+  total_invested_paise: number | null;
+  projected_breakeven_date: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OutletInvestmentConfig {
+  opened_on: string;
+  total_invested_rupees: number;
+  projected_breakeven_date?: string | null;
 }
 
 export interface OutletPhoto {

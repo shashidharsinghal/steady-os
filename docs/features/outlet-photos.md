@@ -1,5 +1,7 @@
 # Feature: Outlet Photos
 
+> **Status update (2026-05-08):** v2.1 shipped. Visual layer inherits from `design-system.md` v3 — no per-spec changes needed.
+
 Outlets should feel like real places, not database rows. Each outlet can have
 up to 5 photos — storefront, interior, signage, team shot, etc. These appear
 prominently on the outlet detail page and as a thumbnail on the outlet list.

@@ -1,11 +1,17 @@
 # Feature: Sales Ingestion v1
 
 **Status:** Draft
-**Last updated:** 2026-04-18
-**Related:** `ingestion-framework.md` (shared infrastructure this depends on),
-`ingestion-analysis.md` (source-file analysis driving this spec),
-`outlets.md`, `employees.md`
-**Depends on:** ingestion-framework.md must ship first (or alongside)
+
+> **Status update (2026-05-08):** v2.1 shipped. Item-level ingestion is live.
+> **Cross-references for v3:**
+>
+> - Per-item revenue feeds the `inventory.md` margin calculations.
+> - P&L line items propagate to `expenses.md` (see "Integration with Expenses" in `pnl-ingestion.md`).
+>   **Last updated:** 2026-04-18
+>   **Related:** `ingestion-framework.md` (shared infrastructure this depends on),
+>   `ingestion-analysis.md` (source-file analysis driving this spec),
+>   `outlets.md`, `employees.md`
+>   **Depends on:** ingestion-framework.md must ship first (or alongside)
 
 ---
 

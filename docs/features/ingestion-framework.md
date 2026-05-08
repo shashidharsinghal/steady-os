@@ -675,3 +675,8 @@ Sensitive fields (customer phones): hashed only, never plaintext. See
 - Unit + integration tests for the framework core
 - `pnpm typecheck && pnpm build` clean
 - CLAUDE.md updated per above
+
+| Doctype               | Trigger                  | Source         | Notes                                                                                                                         |
+| --------------------- | ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `expense_propagation` | `pnl_committed` event    | `petpooja_pnl` | Auto-creates expenses rows from P&L line items. See `pnl-ingestion.md` § "Integration with Expenses Module".                  |
+| `gmail_invoice`       | `gmail_message_received` | `gmail_scan`   | LLM-extracted invoice → expenses row with `extraction_confidence`. See `gmail-auto-ingest.md` § "Phase 2 — Invoice Scanning". |

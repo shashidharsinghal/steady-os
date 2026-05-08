@@ -25,5 +25,5 @@ Claude reads these files when building a feature; treat them as the source of tr
 | 5   | sales-pnl           | ⬜ not started |
 | 6   | dashboard           | ⬜ not started |
 | 7   | recommendations     | ⬜ not started |
-| 8   | tasks               | ⬜ not started |
+| 8   | [tasks](tasks.md)   | 🔲 spec        |
 | 9   | roles-security      | ⬜ not started |

@@ -8,13 +8,13 @@ export function AlertsStrip({ alerts }: { alerts: MorningCheckAlert[] }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {alerts.map((alert) => {
-        const Icon = alert.tone === "warn" ? AlertTriangle : Info;
+        const Icon = alert.tone === "red" ? AlertTriangle : Info;
         return (
           <div
             key={alert.id}
             className={cn(
               "rounded-[18px] border p-4",
-              alert.tone === "warn"
+              alert.tone === "red"
                 ? "border-amber-500/35 bg-amber-500/10"
                 : "border-sky-500/25 bg-sky-500/10"
             )}

@@ -1,181 +1,173 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
-  ChevronsLeftRight,
-  HardHat,
+  BarChart3,
+  Boxes,
   LayoutDashboard,
+  ListTodo,
+  Package,
+  Receipt,
   Settings,
   Store,
   TrendingUp,
   Upload,
+  UserCog,
   Users,
-  UserRoundSearch,
 } from "lucide-react";
-import { Button } from "@stride-os/ui";
 import { cn } from "@stride-os/ui/lib/utils";
 import { SignOutButton } from "./sign-out-button";
-import { ThemeToggle } from "./theme-toggle";
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/pnl", label: "P&L", icon: TrendingUp },
-  { href: "/customers", label: "Customers", icon: UserRoundSearch },
-  { href: "/outlets", label: "Outlets", icon: Store },
-  { href: "/employees", label: "Employees", icon: Users },
-  { href: "/ingest", label: "Ingest", icon: Upload },
-];
-
-const secondaryItems = [
-  { label: "Contractors", icon: HardHat, disabled: true },
-  { label: "Settings", icon: Settings, disabled: true },
-];
 
 type Props = {
   userName: string;
   userEmail: string;
   role: "partner" | "manager";
   outletCount: number;
+  collapsed?: boolean;
 };
 
-export function Sidebar({ userName, userEmail, role, outletCount }: Props) {
+type NavItem = {
+  href?: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string;
+};
+
+const sections: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "Workspace",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/sales", label: "Sales", icon: BarChart3 },
+      { href: "/ingest", label: "Ingest", icon: Upload },
+      { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/expenses", label: "Expenses", icon: Receipt },
+      { href: "/tasks", label: "Tasks", icon: ListTodo },
+      { href: "/customers", label: "Customers", icon: Users },
+      { href: "/outlets", label: "Outlets", icon: Store },
+      { href: "/employees", label: "Employees", icon: UserCog },
+      { href: "/pnl", label: "P&L", icon: TrendingUp },
+      { href: "/admin", label: "Admin", icon: Settings },
+    ],
+  },
+  {
+    label: "Design review",
+    items: [{ label: "All modules", icon: Boxes }],
+  },
+];
+
+export function Sidebar({ userName, userEmail, role, outletCount, collapsed = false }: Props) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    const storedValue = window.localStorage.getItem("stride-sidebar-collapsed");
-    setCollapsed(storedValue === "true");
-  }, []);
-
-  function toggleCollapsed() {
-    const nextValue = !collapsed;
-    setCollapsed(nextValue);
-    window.localStorage.setItem("stride-sidebar-collapsed", String(nextValue));
-  }
 
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] transition-all duration-300",
-        collapsed ? "w-[88px]" : "w-[280px]"
+        "border-sidebar-border text-sidebar-foreground sticky top-0 flex h-screen shrink-0 flex-col border-r bg-[linear-gradient(180deg,hsl(var(--paper-2))_0%,hsl(var(--paper))_100%)] transition-[width] duration-200",
+        collapsed ? "w-[84px]" : "w-[248px]"
       )}
     >
-      <div className="border-b border-[hsl(var(--sidebar-border))] p-4">
-        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="bg-primary/15 text-primary border-primary/20 flex h-11 w-11 items-center justify-center rounded-2xl border">
-            <Store className="h-5 w-5" />
+      <div className={cn("border-sidebar-border border-b py-4", collapsed ? "px-3" : "px-5")}>
+        <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-4")}>
+          <div className="bg-foreground text-background shadow-card grid h-11 w-11 place-items-center rounded-[14px]">
+            <TrendingUp className="h-5 w-5" />
           </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold tracking-tight">Stride OS</p>
-              <p className="text-foreground/55 text-[11px] uppercase tracking-[0.18em]">
-                Steady Strides
-              </p>
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            onClick={toggleCollapsed}
-          >
-            <ChevronsLeftRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {!collapsed && (
-          <div className="mt-4 rounded-[14px] border border-white/5 bg-white/5 p-3">
-            <p className="text-foreground/50 text-[11px] uppercase tracking-[0.18em]">
-              Visible outlets
+          <div className={cn("min-w-0", collapsed && "hidden")}>
+            <p className="truncate text-[1.02rem] font-semibold tracking-[-0.02em]">
+              SteadyStrideOS
             </p>
-            <div className="mt-2 flex items-end justify-between gap-3">
-              <div>
-                <p className="text-lg font-semibold">
-                  {role === "partner" ? "Portfolio" : "Assigned"}
-                </p>
-                <p className="text-foreground/60 text-sm">
-                  {outletCount} {outletCount === 1 ? "outlet" : "outlets"}
-                </p>
-              </div>
-              <div className="text-foreground/70 rounded-full border border-white/10 bg-black/10 px-3 py-1 text-xs uppercase tracking-[0.14em]">
-                {role}
-              </div>
-            </div>
+            <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-[0.22em]">
+              Restaurant Ops
+            </p>
           </div>
-        )}
+        </div>
       </div>
 
-      <nav className="flex-1 space-y-6 px-3 py-4">
-        <div className="space-y-1">
-          {!collapsed && (
-            <p className="text-foreground/45 px-3 text-[11px] uppercase tracking-[0.18em]">
-              Navigate
-            </p>
-          )}
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  collapsed && "justify-center px-0",
-                  active
-                    ? "bg-primary text-primary-foreground shadow-[0_12px_30px_-18px_hsl(var(--primary)/0.9)]"
-                    : "text-foreground/68 hover:bg-white/6 hover:text-foreground"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>{label}</span>}
-              </Link>
-            );
-          })}
-        </div>
+      <nav className="flex-1 overflow-y-auto px-3 py-6">
+        {sections.map((section) => (
+          <div key={section.label} className="mb-7">
+            {!collapsed ? (
+              <p className="text-muted-foreground px-3 pb-3 text-[11px] font-medium uppercase tracking-[0.22em]">
+                {section.label}
+              </p>
+            ) : null}
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const active = item.href
+                  ? pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  : false;
+                const content = (
+                  <>
+                    <item.icon className="h-4.5 w-4.5 shrink-0" />
+                    {!collapsed ? <span className="flex-1 truncate">{item.label}</span> : null}
+                    {!collapsed && item.badge ? (
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]",
+                          active ? "bg-white/12 text-background" : "text-muted-foreground"
+                        )}
+                      >
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </>
+                );
 
-        <div className="space-y-1">
-          {!collapsed && (
-            <p className="text-foreground/45 px-3 text-[11px] uppercase tracking-[0.18em]">Later</p>
-          )}
-          {secondaryItems.map(({ label, icon: Icon }) => (
-            <div
-              key={label}
-              className={cn(
-                "text-foreground/40 flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm",
-                collapsed && "justify-center px-0"
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>{label}</span>}
+                if (!item.href) {
+                  return (
+                    <div
+                      key={item.label}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        "text-muted-foreground/72 flex cursor-not-allowed items-center rounded-[14px] py-3 text-[14px] font-medium",
+                        collapsed ? "justify-center px-3" : "gap-3 px-4"
+                      )}
+                    >
+                      {content}
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      "flex items-center rounded-[14px] py-3 text-[14px] font-medium transition-colors",
+                      collapsed ? "justify-center px-3" : "gap-3 px-4",
+                      active
+                        ? "bg-foreground text-background shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+                        : "hover:bg-paper-subtle hover:text-foreground text-[hsl(var(--ink-2))]"
+                    )}
+                  >
+                    {content}
+                  </Link>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </nav>
 
-      <div className="space-y-3 border-t border-[hsl(var(--sidebar-border))] p-3">
-        {!collapsed && <ThemeToggle />}
+      <div className="border-sidebar-border border-t p-3">
         <div
           className={cn(
-            "rounded-[14px] border border-white/5 bg-white/5 p-3",
-            collapsed && "border-0 bg-transparent p-0"
+            "border-border bg-card shadow-card rounded-[18px] border",
+            collapsed ? "p-2" : "p-3"
           )}
         >
-          <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-            <div className="bg-primary/15 text-primary border-primary/20 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold">
+          <div className={cn("flex items-center", collapsed ? "flex-col gap-2" : "gap-3")}>
+            <div className="grid h-12 w-12 place-items-center rounded-[14px] bg-[hsl(var(--blue))] text-sm font-semibold text-white">
               {(userName[0] ?? userEmail[0] ?? "S").toUpperCase()}
             </div>
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{userName}</p>
-                <p className="text-foreground/55 truncate text-xs">{userEmail}</p>
-              </div>
-            )}
-          </div>
-
-          <div className={cn("mt-3", collapsed && "mt-2 flex justify-center")}>
+            <div className={cn("min-w-0 flex-1", collapsed && "hidden")}>
+              <p className="truncate text-sm font-semibold">{userName}</p>
+              <p className="text-muted-foreground truncate text-xs">{userEmail}</p>
+              <p className="text-muted-foreground mt-1 text-[11px] uppercase tracking-[0.14em]">
+                {role} · {outletCount} {outletCount === 1 ? "outlet" : "outlets"}
+              </p>
+            </div>
             <SignOutButton collapsed={collapsed} />
           </div>
         </div>

@@ -83,6 +83,53 @@ stride-os/
 - Google OAuth + allowlisted email domains for sign-in
 - Pine Labs / bank data treated as sensitive — encryption at rest via Supabase
 
+## v3 Status (as of 2026-05-08)
+
+**Shipped (v2.1):**
+Outlets, Outlet photos, Employees, Contractors, Sales ingestion (Petpooja, Pine Labs, Swiggy), Petpooja daily ingestion, Gmail auto-ingest Phase 1 (Petpooja reports), P&L ingestion, Customer intelligence, Dashboard v2 (being replaced).
+
+**v3 in progress — implementation order:**
+
+| #   | Phase                                                      | Spec                                          | Effort |
+| --- | ---------------------------------------------------------- | --------------------------------------------- | ------ |
+| 1   | Design System v3                                           | `design-system.md`                            | 1 d    |
+| 2   | Outlet Investments schema + Admin UI                       | `outlet-investments.md`, `admin.md` § Outlets | 1 d    |
+| 3   | Customer segment definitions schema + Admin UI             | `dashboard-v3.md`, `admin.md` § Segments      | 1 d    |
+| 4   | Expense categories schema + Admin UI                       | `expenses.md`, `admin.md` § Categories        | 1 d    |
+| 5   | Inventory module                                           | `inventory.md`                                | 3-4 d  |
+| 6   | Dashboard sub-phase 1 — Frame + Morning Check              | `dashboard-v3.md` Sec 1, 2                    | 1.5 d  |
+| 7   | Dashboard sub-phase 2 — Stat strip + Trend chart           | `dashboard-v3.md` Sec 3, 5                    | 1.5 d  |
+| 8   | Expenses sub-phase 1 — Schema + Spend Overview             | `expenses.md` Tab 1                           | 1.5 d  |
+| 9   | Expenses sub-phase 2 — Manual + Recurring                  | `expenses.md` Sub-phase 2                     | 1 d    |
+| 10  | Dashboard sub-phase 3 — Investment Recovery + DoW + Hourly | `dashboard-v3.md` Sec 4, 6                    | 1.5 d  |
+| 11  | Dashboard sub-phase 4 — Channels + Items + Customers       | `dashboard-v3.md` Sec 7, 8                    | 1 d    |
+| 12  | Dashboard sub-phase 5 — Discount + Payment                 | `dashboard-v3.md` Sec 9                       | 1 d    |
+| 13  | Sales Analytics deep-dive                                  | `sales-analytics.md`                          | 3 d    |
+| 14  | Expenses sub-phase 3 — Pending Bills UI                    | `expenses.md` Tab 2                           | 1 d    |
+| 15  | Admin module                                               | `admin.md`                                    | 3 d    |
+| 16  | Ingest UX v3                                               | `ingest-ux-v3.md`                             | 2 d    |
+| 17  | Expenses sub-phase 4 — Gmail invoice scanning              | `gmail-auto-ingest.md` Phase 2                | 2 d    |
+
+**Total: ~28-30 days of Codex work across 17 phases.**
+
+**Critical path notes:**
+
+- Phases 2-4 (small schema migrations) MUST happen before phases that consume them.
+- Phase 5 (Inventory) before Phase 7 (so profit margin renders).
+- Phase 8 (Expenses Spend Overview) before Phase 10 (so profit calc has expenses).
+
+**Build patterns (unchanged from v2.1):**
+
+- One feature per Codex session
+- Server actions for all data fetching
+- RLS via `is_partner()` SQL helper
+- Money in paise (bigint)
+- Soft delete + 30-day purge
+- Conventional commits
+- Update CLAUDE.md after each merge
+
+**Design language:** see `docs/features/design-system.md` v3 — coral accent `#ff5b3a`, paper/ink palette, Instrument Serif italic page titles, JetBrains Mono for numbers. Visual reference at `docs/design-exports/SteadyStrideOS_Redesign.html` and the JSX files alongside.
+
 ## Implemented Features
 
 ### Outlets (`/outlets`)

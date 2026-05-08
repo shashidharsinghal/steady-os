@@ -1,5 +1,7 @@
 # Feature: Contractors
 
+> **Status update (2026-05-08):** v2.1 shipped. Visual layer inherits from `design-system.md` v3 — no per-spec changes needed.
+
 Contractors are people engaged via an external agency or vendor, not on the
 Steady Strides payroll. Today this is primarily agency-sourced cleaners;
 the model is designed to also accommodate future relationships like
