@@ -9,6 +9,7 @@ import {
   deleteExpense,
   markExpensePaid,
   rejectBill,
+  updateExpenseComment,
   upsertBudget,
 } from "@/lib/expenses";
 
@@ -37,6 +38,7 @@ export async function addManualExpenseAction(formData: FormData) {
     category_id: formData.get("category_id"),
     vendor_name: formData.get("vendor_name"),
     description: formData.get("description"),
+    comment: formData.get("comment"),
     amount_rupees: formData.get("amount_rupees"),
     tax_rupees: formData.get("tax_rupees") || 0,
     invoice_date: formData.get("invoice_date"),
@@ -94,5 +96,16 @@ export async function rejectBillAction(formData: FormData) {
   const outletId = String(formData.get("outlet_id") ?? "");
   if (!id || !outletId) throw new Error("Missing bill");
   await rejectBill(id, outletId);
+  revalidatePath("/expenses");
+}
+
+export async function updateExpenseCommentAction(formData: FormData) {
+  await requirePartner();
+  const id = String(formData.get("id") ?? "");
+  const outletId = String(formData.get("outlet_id") ?? "");
+  const comment = String(formData.get("comment") ?? "").trim() || null;
+  if (!id || !outletId) throw new Error("Missing expense");
+
+  await updateExpenseComment(id, { outletId, comment });
   revalidatePath("/expenses");
 }

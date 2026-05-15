@@ -240,7 +240,7 @@ function buildGmailQuery(args: {
     '"Report Notification: Item Wise Report"',
     "OR",
     '"Report Notification: Payment Wise Summary"',
-    'OR invoice OR bill OR receipt OR "tax invoice" OR "payment due" OR rent OR lease OR maintenance OR CAM OR utility OR utilities OR electricity OR water OR LPG OR gas',
+    'OR invoice OR bill OR receipt OR "tax invoice" OR "payment due" OR "purchase order" OR PO OR "raw material" OR Horkiddan OR rent OR lease OR maintenance OR CAM OR utility OR utilities OR electricity OR water OR LPG OR gas',
     ")",
   ];
 
@@ -250,8 +250,8 @@ function buildGmailQuery(args: {
   return parts.join(" ");
 }
 
-function isInvoiceSubject(subject: string): boolean {
-  return /\b(invoice|bill|payment due|receipt|tax invoice|rent|lease|maintenance|cam|utility|utilities|electricity|water|lpg|gas)\b/i.test(
+export function isExpenseDocumentSubject(subject: string): boolean {
+  return /\b(invoice|bill|payment due|receipt|tax invoice|purchase order|po|raw material|rent|lease|maintenance|cam|utility|utilities|electricity|water|lpg|gas|horkiddan)\b/i.test(
     subject
   );
 }
@@ -297,7 +297,10 @@ async function uploadInvoiceAttachment(args: {
   return storagePath;
 }
 
-async function defaultExpenseCategoryId(outletId: string): Promise<string | null> {
+async function expenseCategoryIdForExtraction(
+  outletId: string,
+  extraction: InvoiceExtraction
+): Promise<string | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("expense_categories")
@@ -310,6 +313,24 @@ async function defaultExpenseCategoryId(outletId: string): Promise<string | null
     throw new Error(error.message);
   }
   const categories = (data ?? []) as Array<{ id: string; name: string }>;
+  const documentText = [
+    extraction.vendorName,
+    extraction.description,
+    extraction.forItem,
+    extraction.periodLabel,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (/\b(horkiddan|purchase order|po|raw material)\b/i.test(documentText)) {
+    return (
+      categories.find((category) =>
+        /supplies|raw material|inventory|stock|purchase/i.test(category.name)
+      )?.id ??
+      categories[0]?.id ??
+      null
+    );
+  }
+
   return (
     categories.find((category) => /supplies|utilities|repairs/i.test(category.name))?.id ??
     categories[0]?.id ??
@@ -335,12 +356,9 @@ async function processInvoiceMessage(args: {
   bodyText: string | null;
   candidates: GmailAttachmentCandidate[];
 }): Promise<boolean> {
-  if (!isInvoiceSubject(args.subject)) return false;
+  if (!isExpenseDocumentSubject(args.subject)) return false;
   const invoiceAttachment = args.candidates.find(isInvoiceAttachment);
   if (!invoiceAttachment) return false;
-
-  const categoryId = await defaultExpenseCategoryId(args.outlet.id);
-  if (!categoryId) return false;
 
   const supabase = createAdminClient();
   const existingExpense = await supabase
@@ -388,6 +406,9 @@ async function processInvoiceMessage(args: {
     fileBuffer: attachmentBuffer,
     bodyText: args.bodyText,
   });
+  const categoryId = await expenseCategoryIdForExtraction(args.outlet.id, extraction);
+  if (!categoryId) return false;
+
   const isHighConfidence = extraction.confidence >= 90 && extraction.amountPaise > 0;
   const status =
     isHighConfidence && extraction.amountPaise <= args.outlet.auto_approve_under_paise
@@ -1086,17 +1107,77 @@ async function createProcessedMessage(args: {
   if (error) throw new Error(error.message);
 }
 
-async function alreadyProcessedMessage(outletId: string, messageId: string): Promise<boolean> {
+export function shouldReprocessProcessedMessageForBackfill(args: {
+  ingestionRunId: string | null;
+  ingestionRunStatus?: IngestionRunRow["status"] | null;
+  ingestionRunDeletedAt?: string | null;
+  hasActiveExpense?: boolean;
+}): boolean {
+  if (args.ingestionRunId) {
+    return (
+      Boolean(args.ingestionRunDeletedAt) ||
+      args.ingestionRunStatus === "failed" ||
+      args.ingestionRunStatus === "rolled_back" ||
+      args.ingestionRunStatus === "purged"
+    );
+  }
+
+  return !args.hasActiveExpense;
+}
+
+async function shouldSkipProcessedMessage(args: {
+  outletId: string;
+  messageId: string;
+  triggeredBy: TriggeredBy;
+}): Promise<boolean> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("gmail_processed_messages")
-    .select("id")
-    .eq("outlet_id", outletId)
-    .eq("message_id", messageId)
+    .select("id, ingestion_run_id")
+    .eq("outlet_id", args.outletId)
+    .eq("message_id", args.messageId)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return Boolean(data);
+  if (!data) return false;
+  if (args.triggeredBy !== "backfill") return true;
+
+  let ingestionRunStatus: IngestionRunRow["status"] | null = null;
+  let ingestionRunDeletedAt: string | null = null;
+  if (data.ingestion_run_id) {
+    const { data: run, error: runError } = await supabase
+      .from("ingestion_runs")
+      .select("status, deleted_at")
+      .eq("id", data.ingestion_run_id)
+      .maybeSingle();
+
+    if (runError) throw new Error(runError.message);
+    ingestionRunStatus = run?.status ?? null;
+    ingestionRunDeletedAt = run?.deleted_at ?? null;
+  }
+
+  let hasActiveExpense = false;
+  if (!data.ingestion_run_id) {
+    const { data: expense, error: expenseError } = await supabase
+      .from("expenses")
+      .select("id")
+      .eq("outlet_id", args.outletId)
+      .eq("source_email_id", args.messageId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (expenseError && !isMissingExpenseSchemaError(expenseError.message)) {
+      throw new Error(expenseError.message);
+    }
+    hasActiveExpense = Boolean(expense?.id);
+  }
+
+  return !shouldReprocessProcessedMessageForBackfill({
+    ingestionRunId: data.ingestion_run_id,
+    ingestionRunStatus,
+    ingestionRunDeletedAt,
+    hasActiveExpense,
+  });
 }
 
 async function sendWhatsappReviewAlert(args: {
@@ -1257,7 +1338,13 @@ export async function syncGmailForOutlet(options: SyncOptions): Promise<SyncResu
     const partialErrors: string[] = [];
 
     for (const messageRef of messageRefs) {
-      if (await alreadyProcessedMessage(options.outletId, messageRef.id)) {
+      if (
+        await shouldSkipProcessedMessage({
+          outletId: options.outletId,
+          messageId: messageRef.id,
+          triggeredBy: options.triggeredBy,
+        })
+      ) {
         emailsSkipped += 1;
         continue;
       }

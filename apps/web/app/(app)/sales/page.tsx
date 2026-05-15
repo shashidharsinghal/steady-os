@@ -12,10 +12,13 @@ import {
   getHourlyHeatmap,
   getItemPerformance,
   listSalesCategories,
+  listSalesOrders,
+  normalizeSalesOrderFilters,
   type ChannelEconomicsDetailRow,
   type DailySummaryRow,
   type HeatmapCell,
   type ItemPerformanceRow,
+  type SalesOrderDetailRow,
 } from "./_lib/sales";
 
 type PageProps = {
@@ -30,6 +33,21 @@ const channels: Array<{ value: DashboardChannel | ""; label: string }> = [
   { value: "zomato", label: "Zomato" },
   { value: "other", label: "Other" },
 ];
+
+const settlementStatuses = [
+  { value: "", label: "All settlements" },
+  { value: "settled", label: "Settled" },
+  { value: "pending", label: "Pending" },
+  { value: "unknown", label: "Unknown" },
+] as const;
+
+const orderSortFields = [
+  { value: "ordered_at", label: "Order date" },
+  { value: "gross_amount_paise", label: "Gross" },
+  { value: "discount_amount_paise", label: "Discount" },
+  { value: "total_amount_paise", label: "Net sales" },
+  { value: "settlement_status", label: "Settlement" },
+] as const;
 
 function param(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -73,11 +91,18 @@ export default async function SalesPage({ searchParams }: PageProps) {
   const category = param(params.category) ?? "";
   const channel = param(params.channel) ?? "";
   const search = param(params.q) ?? param(params.item) ?? "";
+  const orderFilters = normalizeSalesOrderFilters({
+    channel: param(params.orderChannel),
+    settlementStatus: param(params.settlement),
+    sortBy: param(params.orderSort),
+    sortDir: param(params.orderDir),
+  });
 
-  const [daily, categories, items, heatmap, channelsDetail] = await Promise.all([
+  const [daily, categories, items, orders, heatmap, channelsDetail] = await Promise.all([
     getDailySummary(selectedOutlet.id, period),
     listSalesCategories(selectedOutlet.id, period),
     getItemPerformance(selectedOutlet.id, period, { category, channel, search }),
+    listSalesOrders(selectedOutlet.id, period, orderFilters),
     getHourlyHeatmap(selectedOutlet.id, period),
     getChannelEconomicsDetail(selectedOutlet.id, period),
   ]);
@@ -131,6 +156,23 @@ export default async function SalesPage({ searchParams }: PageProps) {
           <SectionHeader icon={LineChart} eyebrow="Daily summary" title="Revenue by day" />
           <DailyRevenueChart rows={daily} />
           <DailySummaryTable rows={daily} bestDay={bestDay?.dayKey} worstDay={worstDay?.dayKey} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="border-border flex flex-wrap items-center justify-between gap-4 border-b p-5">
+            <div>
+              <p className="page-eyebrow">Order rows</p>
+              <h2 className="section-card-title">Sales orders</h2>
+            </div>
+            <SalesOrderFilterForm
+              outletId={selectedOutlet.id}
+              periodKey={period.key}
+              filters={orderFilters}
+            />
+          </div>
+          <SalesOrdersTable rows={orders} />
         </CardContent>
       </Card>
 
@@ -271,6 +313,73 @@ function ItemFilterForm({
       </div>
       <Button type="submit" variant="outline" size="sm">
         Filter
+      </Button>
+    </form>
+  );
+}
+
+function SalesOrderFilterForm({
+  outletId,
+  periodKey,
+  filters,
+}: {
+  outletId: string;
+  periodKey: string;
+  filters: ReturnType<typeof normalizeSalesOrderFilters>;
+}) {
+  return (
+    <form
+      action="/sales"
+      className="grid w-full gap-2 sm:w-auto sm:grid-cols-[140px_150px_150px_120px_auto_auto]"
+    >
+      <input type="hidden" name="outletId" value={outletId} />
+      <input type="hidden" name="period" value={periodKey} />
+      <select
+        name="orderChannel"
+        defaultValue={filters.channel}
+        className="border-border bg-background h-9 rounded-[10px] border px-3 text-sm"
+      >
+        {channels.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+      <select
+        name="settlement"
+        defaultValue={filters.settlementStatus}
+        className="border-border bg-background h-9 rounded-[10px] border px-3 text-sm"
+      >
+        {settlementStatuses.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+      <select
+        name="orderSort"
+        defaultValue={filters.sortBy}
+        className="border-border bg-background h-9 rounded-[10px] border px-3 text-sm"
+      >
+        {orderSortFields.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+      <select
+        name="orderDir"
+        defaultValue={filters.sortDir}
+        className="border-border bg-background h-9 rounded-[10px] border px-3 text-sm"
+      >
+        <option value="desc">Desc</option>
+        <option value="asc">Asc</option>
+      </select>
+      <Button type="submit" variant="outline" size="sm">
+        Apply
+      </Button>
+      <Button asChild variant="ghost" size="sm">
+        <a href={`/sales?outletId=${outletId}&period=${periodKey}`}>Clear</a>
       </Button>
     </form>
   );
@@ -503,6 +612,92 @@ function ItemPerformanceTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SalesOrdersTable({ rows }: { rows: SalesOrderDetailRow[] }) {
+  if (rows.length === 0) return <EmptyState label="No matching sales orders found." />;
+
+  const totals = rows.reduce(
+    (acc, row) => ({
+      grossPaise: acc.grossPaise + row.grossPaise,
+      discountPaise: acc.discountPaise + row.discountPaise,
+      totalPaise: acc.totalPaise + row.totalPaise,
+    }),
+    { grossPaise: 0, discountPaise: 0, totalPaise: 0 }
+  );
+
+  return (
+    <div>
+      <div className="border-border grid gap-3 border-b p-5 text-sm sm:grid-cols-4">
+        <MiniTotal label="Rows" value={rows.length.toLocaleString("en-IN")} />
+        <MiniTotal label="Gross" value={money(totals.grossPaise)} />
+        <MiniTotal label="Discount" value={money(totals.discountPaise)} />
+        <MiniTotal label="Net sales" value={money(totals.totalPaise)} />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] text-sm">
+          <thead className="bg-paper-subtle text-muted-foreground text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+            <tr>
+              <th className="px-5 py-4">Order</th>
+              <th className="px-5 py-4">Date</th>
+              <th className="px-5 py-4">Channel</th>
+              <th className="px-5 py-4 text-right">Gross</th>
+              <th className="px-5 py-4 text-right">Discount</th>
+              <th className="px-5 py-4 text-right">Net sales</th>
+              <th className="px-5 py-4">Settlement</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-border border-t">
+                <td className="px-5 py-4">
+                  <div className="font-medium">{row.sourceOrderId}</div>
+                  <div className="text-muted-foreground text-xs">{row.source}</div>
+                </td>
+                <td className="px-5 py-4 font-mono text-xs">{formatDate(row.orderedAt)}</td>
+                <td className="px-5 py-4">{row.channelLabel}</td>
+                <td className="px-5 py-4 text-right font-mono">{money(row.grossPaise)}</td>
+                <td className="px-5 py-4 text-right font-mono">{money(row.discountPaise)}</td>
+                <td className="px-5 py-4 text-right font-mono font-semibold">
+                  {money(row.totalPaise)}
+                </td>
+                <td className="px-5 py-4">
+                  <SettlementPill status={row.settlementStatus} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MiniTotal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-border bg-paper-subtle rounded-[10px] border px-3 py-2">
+      <div className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function SettlementPill({ status }: { status: string }) {
+  const tone = status === "settled" ? "green" : status === "pending" ? "amber" : "muted";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em]",
+        tone === "green" && "bg-[hsl(var(--green-soft))] text-[hsl(var(--green))]",
+        tone === "amber" && "bg-[hsl(var(--amber-soft))] text-[hsl(var(--amber))]",
+        tone === "muted" && "bg-paper-subtle text-muted-foreground"
+      )}
+    >
+      {status}
+    </span>
   );
 }
 

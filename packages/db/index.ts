@@ -303,6 +303,7 @@ export type Database = {
           subcategory: string | null;
           vendor_name: string | null;
           description: string;
+          comment: string | null;
           for_item: string | null;
           period_label: string | null;
           amount_paise: number;
@@ -337,6 +338,7 @@ export type Database = {
           subcategory?: string | null;
           vendor_name?: string | null;
           description: string;
+          comment?: string | null;
           for_item?: string | null;
           period_label?: string | null;
           amount_paise: number;
@@ -371,6 +373,7 @@ export type Database = {
           subcategory?: string | null;
           vendor_name?: string | null;
           description?: string;
+          comment?: string | null;
           for_item?: string | null;
           period_label?: string | null;
           amount_paise?: number;

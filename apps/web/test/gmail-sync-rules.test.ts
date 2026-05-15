@@ -6,6 +6,8 @@ import {
   buildGmailBackfillDates,
   evaluateAutoCommitReadiness,
   isAllowedPetpoojaSender,
+  isExpenseDocumentSubject,
+  shouldReprocessProcessedMessageForBackfill,
   subjectMatchesOutlet,
 } from "@/lib/gmail/sync";
 
@@ -14,6 +16,13 @@ describe("gmail sync rules", () => {
     expect(isAllowedPetpoojaSender("Petpooja Reports <reports@petpooja.com>")).toBe(true);
     expect(isAllowedPetpoojaSender("noreply@petpooja.com")).toBe(true);
     expect(isAllowedPetpoojaSender("Fake Reports <reports@example.com>")).toBe(false);
+  });
+
+  it("recognizes Horkiddan purchase orders as expense documents", () => {
+    expect(isExpenseDocumentSubject("PO From Horkiddan")).toBe(true);
+    expect(isExpenseDocumentSubject("Purchase Order 125781_113601715_20260514174900")).toBe(true);
+    expect(isExpenseDocumentSubject("Raw material PO for May 2026")).toBe(true);
+    expect(isExpenseDocumentSubject("Weekly staff roster")).toBe(false);
   });
 
   it("matches outlet names from the subject line with punctuation tolerance", () => {
@@ -74,5 +83,45 @@ describe("gmail sync rules", () => {
       "2 row-level parse errors found.",
       "Row count is outside the expected range.",
     ]);
+  });
+
+  it("reprocesses stale processed messages during explicit backfill", () => {
+    expect(
+      shouldReprocessProcessedMessageForBackfill({
+        ingestionRunId: "run-1",
+        ingestionRunStatus: "committed",
+        ingestionRunDeletedAt: null,
+      })
+    ).toBe(false);
+
+    expect(
+      shouldReprocessProcessedMessageForBackfill({
+        ingestionRunId: "run-1",
+        ingestionRunStatus: "committed",
+        ingestionRunDeletedAt: "2026-05-10T00:00:00.000Z",
+      })
+    ).toBe(true);
+
+    expect(
+      shouldReprocessProcessedMessageForBackfill({
+        ingestionRunId: "run-1",
+        ingestionRunStatus: "rolled_back",
+        ingestionRunDeletedAt: null,
+      })
+    ).toBe(true);
+
+    expect(
+      shouldReprocessProcessedMessageForBackfill({
+        ingestionRunId: null,
+        hasActiveExpense: true,
+      })
+    ).toBe(false);
+
+    expect(
+      shouldReprocessProcessedMessageForBackfill({
+        ingestionRunId: null,
+        hasActiveExpense: false,
+      })
+    ).toBe(true);
   });
 });

@@ -41,6 +41,7 @@ export interface Expense {
   subcategory: string | null;
   vendor_name: string | null;
   description: string;
+  comment: string | null;
   for_item: string | null;
   period_label: string | null;
   amount_paise: number;
@@ -106,8 +107,10 @@ export interface PendingBillRow {
   vendor: string;
   forItem: string | null;
   description: string | null;
+  comment: string | null;
   period: string | null;
   invoiceDate: string | null;
+  displayDue: string | null;
   amountPaise: number;
   due: string | null;
   status: ExpenseStatus;
@@ -133,6 +136,7 @@ export interface AddManualExpenseInput {
   category_id: string;
   vendor_name?: string | null;
   description: string;
+  comment?: string | null;
   amount_rupees: number;
   tax_rupees?: number | null;
   invoice_date?: string | null;

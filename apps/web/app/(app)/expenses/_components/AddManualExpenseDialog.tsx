@@ -81,6 +81,16 @@ export function AddManualExpenseDialog({
             />
           </label>
 
+          <label className="space-y-1 text-sm font-medium">
+            Comment
+            <textarea
+              name="comment"
+              placeholder="Internal note, approval context, or follow-up..."
+              rows={3}
+              className="border-border bg-background w-full resize-none rounded-[10px] border px-3 py-2 text-sm"
+            />
+          </label>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-medium">
               Amount

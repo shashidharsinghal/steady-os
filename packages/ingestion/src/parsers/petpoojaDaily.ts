@@ -466,7 +466,7 @@ export const petpoojaItemBillParser: Parser<
 
     for (const chunk of batch(invoiceNos)) {
       const result = await ctx.supabase
-        .from("sales_orders")
+        .from("active_sales_orders")
         .select("id, source_order_id")
         .eq("outlet_id", ctx.outletId)
         .eq("source", "petpooja_daily")
@@ -488,7 +488,7 @@ export const petpoojaItemBillParser: Parser<
 
     for (const chunk of batch(linkedOrderIds)) {
       const result = await ctx.supabase
-        .from("sales_line_items")
+        .from("active_sales_line_items")
         .select("order_id, item_name, quantity, unit_price_paise")
         .in("order_id", chunk);
       assertSupabaseSuccess(result, "Failed to check for duplicate Petpooja line items.");
@@ -689,7 +689,7 @@ export const petpoojaPaymentSummaryParser: Parser<
     const existingIds = new Set<string>();
     for (const chunk of batch(ctx.records.map((record) => record.invoiceNo))) {
       const result = await ctx.supabase
-        .from("sales_orders")
+        .from("active_sales_orders")
         .select("source_order_id")
         .eq("outlet_id", ctx.outletId)
         .eq("source", "petpooja_daily")

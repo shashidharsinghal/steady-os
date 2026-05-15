@@ -11,7 +11,7 @@ export type InvoiceExtraction = {
 };
 
 const INVOICE_SUBJECT_HINT =
-  /\b(invoice|bill|payment due|receipt|tax invoice|rent|lease|maintenance|cam|utility|utilities|electricity|water|lpg|gas)\b/i;
+  /\b(invoice|bill|payment due|receipt|tax invoice|purchase order|po|raw material|rent|lease|maintenance|cam|utility|utilities|electricity|water|lpg|gas|horkiddan)\b/i;
 
 type StructuredInvoiceResult = {
   vendor_name: string | null;
@@ -358,6 +358,111 @@ function extractGasBillInvoice(args: {
   };
 }
 
+function extractPurchaseOrder(args: {
+  text: string;
+  subject: string;
+  sender: string;
+  internalDate: string | null;
+}): InvoiceExtraction | null {
+  const text = normalizeInvoiceText(args.text);
+  const subjectOrText = `${args.subject}\n${text}`;
+  const isPurchaseOrder =
+    /\b(purchase order|p\.?\s*o\.?|po\s*(?:no|number|#)|raw material|horkiddan)\b/i.test(
+      subjectOrText
+    );
+  if (!isPurchaseOrder) return null;
+
+  const senderEmail = extractSenderEmail(args.sender);
+  const vendorName =
+    text
+      .match(/\b(?:vendor|supplier|seller)\b[\s:.-]*([A-Za-z][A-Za-z0-9 &.,()-]{2,80})/i)?.[1]
+      ?.trim() ??
+    text.match(/\b(Horkiddan[A-Za-z0-9 &.,()-]*)\b/i)?.[1]?.trim() ??
+    args.sender.match(/^"?([^"<]+)"?\s*</)?.[1]?.trim() ??
+    senderEmail?.split("@")[0]?.replace(/[._-]+/g, " ") ??
+    "Horkiddan";
+  const poNumber =
+    text.match(
+      /\b(?:purchase order|po|p\.o\.|po no|po number|po #)\b[\s:#.-]*([A-Z0-9/-]+)/i
+    )?.[1] ??
+    args.subject.match(/\b(?:purchase order|po|p\.o\.)\b[\s:#.-]*([A-Z0-9/-]+)/i)?.[1] ??
+    null;
+  const totalPaise =
+    captureMoney(
+      text.match(
+        /\b(?:grand total|net total|order total|po value|total value|total amount|amount payable|payable amount)\b[\s:₹-]*([0-9,]+\.[0-9]{2}|[0-9,]+)/i
+      )?.[1]
+    ) ??
+    captureMoney(args.subject.match(/(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i)?.[1]) ??
+    0;
+  const taxPaise =
+    captureMoney(text.match(/\b(?:gst|tax)\b[\s:₹-]*([0-9,]+\.[0-9]{2}|[0-9,]+)/i)?.[1]) ?? 0;
+  const amountPaise = Math.max(totalPaise - taxPaise, 0);
+  const invoiceDate =
+    parseInvoiceDate(
+      text.match(
+        /\b(?:po date|purchase order date|order date|date)\b[\s:.-]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{2,4})/i
+      )?.[1]
+    ) ??
+    parseInvoiceDate(
+      text.match(
+        /\b(?:po date|purchase order date|order date|date)\b[\s:.-]*([0-9]{1,2}[- ][A-Za-z]{3,9}[- ]\d{4})/i
+      )?.[1]
+    ) ??
+    args.internalDate?.slice(0, 10) ??
+    null;
+  const dueDate =
+    parseInvoiceDate(
+      text.match(
+        /\b(?:delivery date|due date|expected date|required by)\b[\s:.-]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{2,4})/i
+      )?.[1]
+    ) ??
+    parseInvoiceDate(
+      text.match(
+        /\b(?:delivery date|due date|expected date|required by)\b[\s:.-]*([0-9]{1,2}[- ][A-Za-z]{3,9}[- ]\d{4})/i
+      )?.[1]
+    ) ??
+    null;
+  const periodLabel =
+    normalizePeriodLabel(args.subject.match(/\b([A-Za-z]{3,9}[- ]\d{2,4})\b/i)?.[1]) ??
+    (invoiceDate
+      ? new Intl.DateTimeFormat("en-IN", {
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        }).format(new Date(`${invoiceDate}T00:00:00.000Z`))
+      : null);
+  const forItem =
+    text
+      .match(
+        /\b(?:items?|material|raw material|particulars?)\b[\s:.-]*([A-Za-z][A-Za-z0-9 &.,()/+-]{2,80})/i
+      )?.[1]
+      ?.trim() ??
+    extractSubjectOutlet(args.subject) ??
+    "Raw material";
+  const description = ["Purchase order · raw material", poNumber ? `PO ${poNumber}` : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  let confidence = 66;
+  if (/horkiddan/i.test(subjectOrText)) confidence += 8;
+  if (poNumber) confidence += 6;
+  if (totalPaise > 0) confidence += 8;
+  if (invoiceDate) confidence += 4;
+
+  return {
+    vendorName,
+    amountPaise,
+    taxPaise,
+    invoiceDate,
+    dueDate,
+    description,
+    confidence: Math.min(confidence, 88),
+    periodLabel,
+    forItem,
+  };
+}
+
 function hasOpenAIInvoiceExtraction() {
   return Boolean(process.env.OPENAI_API_KEY);
 }
@@ -415,7 +520,8 @@ async function callOpenAIForStructuredInvoice(args: {
     "Do not guess missing amounts or dates. " +
     "Confidence must be a number from 0 to 100. " +
     "Dates must be YYYY-MM-DD when explicit, else null. " +
-    "If the bill is a utility or LPG/commercial gas invoice, prefer the net payable or final bill total.";
+    "If the bill is a utility or LPG/commercial gas invoice, prefer the net payable or final bill total. " +
+    "If the document is a purchase order or PO for raw materials, extract it as a raw-material expense source document and include the PO number in the description when present.";
 
   const contextText =
     `Subject: ${args.subject || "Unknown"}\n` +
@@ -642,6 +748,22 @@ export async function extractInvoiceFromAttachment(args: {
   }
 
   if (extractedText) {
+    const purchaseOrder = extractPurchaseOrder({
+      text: extractedText,
+      subject: args.subject,
+      sender: args.sender,
+      internalDate: args.internalDate,
+    });
+    if (purchaseOrder) {
+      return {
+        ...fallback,
+        ...purchaseOrder,
+        description: purchaseOrder.description || fallback.description,
+        forItem: purchaseOrder.forItem || fallback.forItem,
+        periodLabel: purchaseOrder.periodLabel || fallback.periodLabel,
+      };
+    }
+
     const rentInvoice = extractRentInvoice({
       text: extractedText,
       subject: args.subject,

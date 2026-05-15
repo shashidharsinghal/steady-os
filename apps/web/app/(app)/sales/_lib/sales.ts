@@ -20,6 +20,8 @@ const HOUR_FMT = new Intl.DateTimeFormat("en-GB", {
 
 type OrderRow = {
   id: string;
+  source: string;
+  source_order_id: string;
   ordered_at: string;
   channel: DashboardChannel;
   total_amount_paise: number | string;
@@ -89,6 +91,42 @@ export type ChannelEconomicsDetailRow = {
   pendingOrders: number;
 };
 
+export type SalesOrderSortField =
+  | "ordered_at"
+  | "gross_amount_paise"
+  | "discount_amount_paise"
+  | "total_amount_paise"
+  | "settlement_status";
+
+export type SalesOrderSortDirection = "asc" | "desc";
+
+export type SalesOrderFilters = {
+  channel?: string;
+  settlementStatus?: string;
+  sortBy?: string;
+  sortDir?: string;
+};
+
+export type NormalizedSalesOrderFilters = {
+  channel: DashboardChannel | "";
+  settlementStatus: "settled" | "pending" | "unknown" | "";
+  sortBy: SalesOrderSortField;
+  sortDir: SalesOrderSortDirection;
+};
+
+export type SalesOrderDetailRow = {
+  id: string;
+  source: string;
+  sourceOrderId: string;
+  orderedAt: string;
+  channel: DashboardChannel;
+  channelLabel: string;
+  grossPaise: number;
+  discountPaise: number;
+  totalPaise: number;
+  settlementStatus: "settled" | "pending" | "unknown";
+};
+
 function dayKey(value: string) {
   return DAY_FMT.format(new Date(value));
 }
@@ -117,6 +155,31 @@ function toPaise(value: number | string | null | undefined) {
 function isMissingColumnError(error: { message?: string } | null, columns: string[]) {
   const message = error?.message?.toLowerCase() ?? "";
   return columns.some((column) => message.includes(column.toLowerCase()));
+}
+
+export function normalizeSalesOrderFilters(
+  filters: SalesOrderFilters = {}
+): NormalizedSalesOrderFilters {
+  const channel = CHANNELS.includes(filters.channel as DashboardChannel)
+    ? (filters.channel as DashboardChannel)
+    : "";
+  const settlementStatus = ["settled", "pending", "unknown"].includes(
+    filters.settlementStatus ?? ""
+  )
+    ? (filters.settlementStatus as NormalizedSalesOrderFilters["settlementStatus"])
+    : "";
+  const sortBy = [
+    "ordered_at",
+    "gross_amount_paise",
+    "discount_amount_paise",
+    "total_amount_paise",
+    "settlement_status",
+  ].includes(filters.sortBy ?? "")
+    ? (filters.sortBy as SalesOrderSortField)
+    : "ordered_at";
+  const sortDir = filters.sortDir === "asc" ? "asc" : "desc";
+
+  return { channel, settlementStatus, sortBy, sortDir };
 }
 
 async function getProfiles(customerIds: string[]) {
@@ -317,6 +380,48 @@ export async function getHourlyHeatmap(
   return Array.from(map.values()).map((cell) => ({
     ...cell,
     aovPaise: cell.orders > 0 ? Math.round(cell.revenuePaise / cell.orders) : 0,
+  }));
+}
+
+export async function listSalesOrders(
+  outletId: string,
+  period: DashboardPeriod,
+  filters: SalesOrderFilters = {}
+): Promise<SalesOrderDetailRow[]> {
+  const supabase = await createClient();
+  const normalized = normalizeSalesOrderFilters(filters);
+
+  let query = supabase
+    .from("active_sales_orders")
+    .select(
+      "id, source, source_order_id, ordered_at, channel, gross_amount_paise, discount_amount_paise, total_amount_paise, settlement_status"
+    )
+    .eq("outlet_id", outletId)
+    .eq("status", "success")
+    .gte("ordered_at", period.start)
+    .lt("ordered_at", period.end)
+    .order(normalized.sortBy, { ascending: normalized.sortDir === "asc" })
+    .limit(100);
+
+  if (normalized.channel) query = query.eq("channel", normalized.channel);
+  if (normalized.settlementStatus) {
+    query = query.eq("settlement_status", normalized.settlementStatus);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Failed to load sales orders: ${error.message}`);
+
+  return ((data ?? []) as OrderRow[]).map((row) => ({
+    id: row.id,
+    source: row.source,
+    sourceOrderId: row.source_order_id,
+    orderedAt: row.ordered_at,
+    channel: row.channel,
+    channelLabel: channelLabel(row.channel),
+    grossPaise: toPaise(row.gross_amount_paise),
+    discountPaise: toPaise(row.discount_amount_paise),
+    totalPaise: toPaise(row.total_amount_paise),
+    settlementStatus: row.settlement_status,
   }));
 }
 

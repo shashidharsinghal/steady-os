@@ -9,7 +9,12 @@ import { getRole } from "@/lib/auth";
 import { getSpendOverview, listExpenses, listPendingBills } from "@/lib/expenses";
 import { createClient } from "@/lib/supabase/server";
 import { AddManualExpenseDialog } from "./_components/AddManualExpenseDialog";
-import { approveBillAction, rejectBillAction, upsertBudgetAction } from "./actions";
+import {
+  approveBillAction,
+  rejectBillAction,
+  updateExpenseCommentAction,
+  upsertBudgetAction,
+} from "./actions";
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -149,7 +154,11 @@ export default async function ExpensesPage({ searchParams }: PageProps) {
       </div>
 
       {tab === "pending" ? (
-        <PendingBillsSection outletId={selectedOutlet.id} data={pendingBills} />
+        <PendingBillsSection
+          outletId={selectedOutlet.id}
+          data={pendingBills}
+          canComment={role === "partner"}
+        />
       ) : (
         <>
           <section className="grid gap-4 xl:grid-cols-12">
@@ -298,6 +307,7 @@ export default async function ExpensesPage({ searchParams }: PageProps) {
                         <th className="px-5 py-4">Vendor</th>
                         <th className="px-5 py-4">Outlet</th>
                         <th className="px-5 py-4">Note</th>
+                        <th className="px-5 py-4">Comment</th>
                         <th className="px-5 py-4">Type</th>
                         <th className="px-5 py-4">Source</th>
                         <th className="px-5 py-4 text-right">Amount</th>
@@ -329,8 +339,21 @@ export default async function ExpensesPage({ searchParams }: PageProps) {
                           <td className="text-muted-foreground px-5 py-4">
                             {expense.outlets?.name ?? selectedOutlet.name}
                           </td>
-                          <td className="text-muted-foreground max-w-[240px] truncate px-5 py-4">
+                          <td className="text-muted-foreground max-w-[220px] truncate px-5 py-4">
                             {expense.description}
+                          </td>
+                          <td className="px-5 py-4">
+                            {role === "partner" ? (
+                              <ExpenseCommentForm
+                                expenseId={expense.id}
+                                outletId={selectedOutlet.id}
+                                defaultValue={expense.comment}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground text-xs">
+                                {expense.comment || "—"}
+                              </span>
+                            )}
                           </td>
                           <td className="px-5 py-4">
                             <span className="inline-flex rounded-full bg-[hsl(var(--blue-soft))] px-2.5 py-1 text-xs font-semibold text-[hsl(var(--blue))]">
@@ -412,9 +435,11 @@ export default async function ExpensesPage({ searchParams }: PageProps) {
 function PendingBillsSection({
   outletId,
   data,
+  canComment,
 }: {
   outletId: string;
   data: Awaited<ReturnType<typeof listPendingBills>>;
+  canComment: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -466,12 +491,13 @@ function PendingBillsSection({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-sm">
+              <table className="w-full min-w-[1080px] text-sm">
                 <thead className="bg-paper-subtle text-muted-foreground text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                   <tr>
                     <th className="px-5 py-4">Vendor / For</th>
                     <th className="px-5 py-4">Period / Bill date</th>
                     <th className="px-5 py-4">Due</th>
+                    <th className="px-5 py-4">Comment</th>
                     <th className="px-5 py-4 text-right">Amount</th>
                     <th className="px-5 py-4">Status</th>
                     <th className="px-5 py-4">Initiated from</th>
@@ -501,7 +527,25 @@ function PendingBillsSection({
                         </div>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs">
-                        {bill.due ? formatDate(bill.due) : "—"}
+                        {bill.displayDue ? formatDate(bill.displayDue) : "—"}
+                        {!bill.due && bill.displayDue ? (
+                          <div className="text-muted-foreground mt-1 font-sans text-[11px]">
+                            invoice date
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-5 py-4">
+                        {canComment ? (
+                          <ExpenseCommentForm
+                            expenseId={bill.id}
+                            outletId={outletId}
+                            defaultValue={bill.comment}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">
+                            {bill.comment || "—"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4 text-right font-mono font-semibold">
                         {money(bill.amountPaise)}
@@ -543,6 +587,33 @@ function PendingBillsSection({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ExpenseCommentForm({
+  expenseId,
+  outletId,
+  defaultValue,
+}: {
+  expenseId: string;
+  outletId: string;
+  defaultValue: string | null;
+}) {
+  return (
+    <form action={updateExpenseCommentAction} className="flex min-w-[220px] items-end gap-2">
+      <input type="hidden" name="id" value={expenseId} />
+      <input type="hidden" name="outlet_id" value={outletId} />
+      <textarea
+        name="comment"
+        defaultValue={defaultValue ?? ""}
+        placeholder="Add comment"
+        rows={2}
+        className="border-border bg-background min-h-10 flex-1 resize-none rounded-[10px] border px-3 py-2 text-xs"
+      />
+      <Button type="submit" variant="outline" size="sm">
+        Save
+      </Button>
+    </form>
   );
 }
 

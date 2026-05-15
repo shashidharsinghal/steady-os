@@ -22,6 +22,12 @@ const manualExpenseBaseSchema = z.object({
   category_id: z.string().uuid(),
   vendor_name: z.string().trim().optional().nullable(),
   description: z.string().trim().min(1, "Description is required"),
+  comment: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .transform((value) => (value ? value : null)),
   amount_rupees: z.coerce.number().min(0, "Amount cannot be negative"),
   tax_rupees: z.coerce.number().min(0, "Tax cannot be negative").optional().nullable(),
   invoice_date: optionalDateSchema,

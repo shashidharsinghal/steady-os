@@ -25,6 +25,7 @@ Categories are configurable per outlet (see Admin spec). Budgets per category.
 - As a partner, I see how much I've spent this month against budget
 - As a partner, I see per-category budget vs actual progress bars
 - As a partner, I review Gmail-detected bills with extraction confidence and approve with one click
+- As a partner, I see Horkiddan raw-material purchase orders from Gmail under expenses so monthly raw material cost is traceable
 - As a partner, I manually add a one-off expense without waiting for invoice email
 - As a partner, I configure auto-approval threshold so small recurring bills don't need babysitting
 - As a partner, I view full expense ledger filtered by recurring vs one-off
@@ -97,6 +98,14 @@ If Gmail connected — blue-tinted banner:
 If Gmail not connected — amber:
 
 > Connect Gmail to auto-detect bills [Connect →]
+
+### Horkiddan raw-material purchase orders
+
+- Gmail expense scanning treats Horkiddan purchase order PDFs as expense source documents.
+- Matching subjects include `PO`, `Purchase Order`, `Raw material`, and `Horkiddan`.
+- Extracted rows use the active `Supplies` category when available, with `Raw material` as the item fallback.
+- PO records should stay in review unless extraction confidence is high enough for the standard auto-scan rules; purchase order heuristics intentionally cap confidence below auto-approval.
+- The description includes the PO number when present, so raw-material cost can be audited by month from the expense ledger.
 
 ### Pending bills table
 

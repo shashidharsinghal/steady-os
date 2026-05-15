@@ -15,6 +15,31 @@ import { createClient } from "@/lib/supabase/server";
 
 const PAGE_SIZE = 25;
 
+type ExpenseAmountLike = {
+  amount_paise?: number | string | null;
+  tax_paise?: number | string | null;
+  total_paise?: number | string | null;
+};
+
+export function paiseNumber(value: number | string | null | undefined): number {
+  const numeric = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(numeric) ? Number(numeric) : 0;
+}
+
+export function expenseTotalPaise(row: ExpenseAmountLike): number {
+  const total = paiseNumber(row.total_paise);
+  if (total > 0) return total;
+  return paiseNumber(row.amount_paise) + paiseNumber(row.tax_paise);
+}
+
+export function expenseDisplayDueDate(expense: {
+  due_date?: string | null;
+  invoice_date?: string | null;
+  created_at?: string | null;
+}): string | null {
+  return expense.due_date ?? expense.invoice_date ?? expense.created_at?.slice(0, 10) ?? null;
+}
+
 function monthBounds(month?: string) {
   const now = new Date();
   const [yearRaw, monthRaw] = (month ?? "").split("-");
@@ -130,14 +155,14 @@ export async function getSpendOverview(outletId: string, month?: string): Promis
 
   const expenseRows = (expenses ?? []) as Array<{
     category_id: string;
-    total_paise: number;
+    total_paise: number | string;
     is_recurring: boolean;
   }>;
 
   const spentByCategory = new Map<string, number>();
   let recurringPaise = 0;
   for (const expense of expenseRows) {
-    const amount = Number(expense.total_paise) || 0;
+    const amount = expenseTotalPaise(expense);
     spentByCategory.set(
       expense.category_id,
       (spentByCategory.get(expense.category_id) ?? 0) + amount
@@ -234,7 +259,14 @@ export async function listExpenses(
   if (error) throw new Error("Failed to load expense ledger");
 
   return {
-    rows: (data ?? []) as ExpenseLedgerRow[],
+    rows: ((data ?? []) as ExpenseLedgerRow[]).map((expense) => ({
+      ...expense,
+      amount_paise: paiseNumber(expense.amount_paise),
+      tax_paise: paiseNumber(expense.tax_paise),
+      total_paise: expenseTotalPaise(expense),
+      extraction_confidence:
+        expense.extraction_confidence == null ? null : Number(expense.extraction_confidence),
+    })),
     page: currentPage,
     pageSize: PAGE_SIZE,
     total: count ?? 0,
@@ -271,6 +303,7 @@ export async function addManualExpense(
       category_id: input.category_id,
       vendor_name: input.vendor_name || null,
       description: input.description,
+      comment: input.comment || null,
       amount_paise: amountPaise,
       tax_paise: taxPaise,
       total_paise: totalPaise,
@@ -315,6 +348,7 @@ export async function updateExpense(
       category_id: input.category_id,
       vendor_name: input.vendor_name,
       description: input.description,
+      comment: input.comment,
       amount_paise: amountPaise,
       tax_paise: taxPaise,
       total_paise: totalPaise,
@@ -401,6 +435,7 @@ export async function generateRecurringExpenses(): Promise<{ created: number; ad
         category_id: template.category_id,
         vendor_name: template.vendor_name,
         description: template.description,
+        comment: template.comment,
         amount_paise: template.amount_paise,
         tax_paise: template.tax_paise,
         total_paise: template.total_paise,
@@ -465,8 +500,10 @@ export async function listPendingBills(outletId: string): Promise<PendingBillsSu
       description: bill.description,
       period: bill.period_label,
       invoiceDate: bill.invoice_date,
-      amountPaise: bill.total_paise,
+      comment: bill.comment,
+      amountPaise: expenseTotalPaise(bill),
       due: bill.due_date,
+      displayDue: expenseDisplayDueDate(bill),
       status: bill.due_date && bill.due_date < today ? "overdue" : bill.status,
       sourceLabel:
         bill.source === "gmail_scan"
@@ -477,7 +514,7 @@ export async function listPendingBills(outletId: string): Promise<PendingBillsSu
       sourceEmail: bill.source_email_addr,
       extractionConfidence: bill.extraction_confidence,
     })),
-    totalPendingPaise: rows.reduce((sum, row) => sum + row.total_paise, 0),
+    totalPendingPaise: rows.reduce((sum, row) => sum + expenseTotalPaise(row), 0),
     overdueCount: rows.filter((row) => row.due_date && row.due_date < today).length,
     scannedThisWeekCount: rows.filter(
       (row) => row.source === "gmail_scan" && new Date(row.created_at) >= weekStart
@@ -506,4 +543,18 @@ export async function rejectBill(id: string, outletId: string): Promise<void> {
     .eq("id", id)
     .eq("outlet_id", outletId);
   if (error) throw new Error("Failed to reject bill");
+}
+
+export async function updateExpenseComment(
+  id: string,
+  input: { outletId: string; comment: string | null }
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("expenses")
+    .update({ comment: input.comment })
+    .eq("id", id)
+    .eq("outlet_id", input.outletId);
+
+  if (error) throw new Error("Failed to update expense comment");
 }

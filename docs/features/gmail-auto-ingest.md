@@ -216,6 +216,18 @@ Only process emails from `noreply@petpooja.com` or `reports@petpooja.com`.
 Do NOT process emails from unknown senders, even if the subject matches.
 This prevents injection attacks via crafted email subjects.
 
+### Expense document matching
+
+Gmail also scans attachment-bearing expense documents for the Expenses module.
+Recognized subjects include invoices, bills, receipts, tax invoices, payment
+due notices, rent/lease/CAM/maintenance bills, utilities, LPG/gas bills,
+purchase orders, `PO`, raw material, and Horkiddan.
+
+Horkiddan purchase orders are routed to Pending Bills as raw-material expense
+source documents. The expense category selector prefers the active `Supplies`
+category for these documents so month-level raw material cost appears in the
+expense ledger after review.
+
 ---
 
 ## Gmail API Query
@@ -553,6 +565,25 @@ picker allows backfilling:
 
 Backfill processes one day at a time, oldest first, with progress shown
 in the UI. It uses the same auto-commit rules as the nightly sync.
+
+### Reprocessing read / previously processed emails
+
+Manual date backfill is intentionally stronger than the nightly dedupe
+path. If a Gmail message was already read or already exists in
+`gmail_processed_messages`, backfill still re-evaluates it when the
+previous output is no longer active.
+
+Backfill should skip a processed message only when it still points to an
+active ingestion run or an active scanned expense. It should reprocess
+the message when:
+
+- the prior ingestion run is `failed`, `rolled_back`, or `purged`
+- the prior ingestion run has `deleted_at IS NOT NULL`
+- the processed record has no ingestion run and no active expense row
+
+Parser duplicate checks used by Gmail backfill must compare against
+active product data, not raw canonical tables, so soft-deleted runs do
+not make the reprocessed report appear fully duplicated.
 
 This is the feature that populates months of item-level data in a single
 session — giving the dashboard real history from day one.
