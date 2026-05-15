@@ -251,7 +251,11 @@ export async function uploadPairedPetpoojaReports(
     paymentFile ? uploadOne(paymentFile, "petpooja_payment_summary") : Promise.resolve(null),
   ]);
 
-  if (itemResult) await parseRun(itemResult.runId, "petpooja_item_bill");
+  if (itemResult) {
+    await parseRun(itemResult.runId, "petpooja_item_bill", {
+      autoCommit: !paymentResult,
+    });
+  }
   if (paymentResult) await parseRun(paymentResult.runId, "petpooja_payment_summary");
 
   return {
@@ -367,13 +371,54 @@ async function uploadFileWithoutProcessing(formData: FormData): Promise<{ runId:
 }
 
 async function autoProcessRun(runId: string, sourceTypeOverride?: string): Promise<void> {
-  await parseRun(runId, sourceTypeOverride);
+  await parseRun(runId, sourceTypeOverride, { autoCommit: true });
 }
 
 // ─── Parse ───────────────────────────────────────────────────────────────────
 
-export async function parseRun(runId: string, sourceTypeOverride?: string): Promise<void> {
+type ParseRunOptions = {
+  autoCommit?: boolean;
+};
+
+function autoCommitBlockers(args: {
+  sourceType: string;
+  rowErrors: number;
+  previewPayload: unknown;
+}): string[] {
+  const payload = args.previewPayload as {
+    missingOrderCount?: number | null;
+    warnings?: unknown[] | null;
+  } | null;
+  const blockers: string[] = [];
+
+  if (args.rowErrors > 0) {
+    blockers.push(
+      `${args.rowErrors} row-level parse error${args.rowErrors === 1 ? "" : "s"} need review.`
+    );
+  }
+
+  if (args.sourceType === "petpooja_item_bill" && (payload?.missingOrderCount ?? 0) > 0) {
+    blockers.push("Matching Petpooja payment orders are not committed yet.");
+  }
+
+  if (
+    args.sourceType === "franchise_pnl_pdf" &&
+    Array.isArray(payload?.warnings) &&
+    payload.warnings.length > 0
+  ) {
+    blockers.push("P&L warnings need review before commit.");
+  }
+
+  return blockers;
+}
+
+export async function parseRun(
+  runId: string,
+  sourceTypeOverride?: string,
+  options: ParseRunOptions = {}
+): Promise<void> {
   await requirePartner();
+  const shouldAutoCommit = options.autoCommit ?? true;
 
   const supabase = await createClient();
   const parserSupabase = supabase as unknown as ParserSupabaseClient;
@@ -459,6 +504,11 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
       );
     }
 
+    const previewPayload = (normalizeResult.previewPayload ?? {
+      displayName: parser.displayName,
+      canonicalRecords: normalizeResult.toInsert,
+    }) as unknown as import("@stride-os/db").Json;
+
     await supabase
       .from("ingestion_runs")
       .update({
@@ -469,14 +519,29 @@ export async function parseRun(runId: string, sourceTypeOverride?: string): Prom
         rows_to_insert: normalizeResult.rowsToInsertCount ?? normalizeResult.toInsert.length,
         rows_duplicate: normalizeResult.duplicateCount,
         rows_errored: rowErrors.length,
-        preview_payload: (normalizeResult.previewPayload ?? {
-          displayName: parser.displayName,
-          canonicalRecords: normalizeResult.toInsert,
-        }) as unknown as import("@stride-os/db").Json,
+        preview_payload: previewPayload,
       })
       .eq("id", runId);
 
-    await commitRun(runId);
+    const blockers = autoCommitBlockers({
+      sourceType,
+      rowErrors: rowErrors.length,
+      previewPayload,
+    });
+
+    if (shouldAutoCommit && blockers.length === 0) {
+      await commitRun(runId);
+    } else if (blockers.length > 0) {
+      await supabase
+        .from("ingestion_runs")
+        .update({
+          error_details: {
+            auto_review_required: true,
+            reasons: blockers,
+          },
+        })
+        .eq("id", runId);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "An unexpected error occurred.";
     await supabase

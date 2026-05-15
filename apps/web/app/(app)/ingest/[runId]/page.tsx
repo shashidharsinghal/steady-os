@@ -66,6 +66,10 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
   const status = typedRun.status as IngestionStatus;
   const errors = (rowErrors ?? []) as RowError[];
   const errorDetails = typedRun.error_details as { message?: string } | null;
+  const autoReviewReasons =
+    errorDetails && "reasons" in errorDetails && Array.isArray(errorDetails.reasons)
+      ? (errorDetails.reasons as string[])
+      : [];
   const previewPayload = typedRun.preview_payload as Record<string, unknown> | null;
 
   return (
@@ -86,7 +90,12 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
       </div>
 
       {/* Status panel */}
-      <StatusPanel run={typedRun} status={status} errorMessage={errorDetails?.message} />
+      <StatusPanel
+        run={typedRun}
+        status={status}
+        errorMessage={errorDetails?.message}
+        autoReviewReasons={autoReviewReasons}
+      />
 
       {typedRun.source_type === "franchise_pnl_pdf" && previewPayload ? (
         <PnlPreviewCard
@@ -199,10 +208,12 @@ function StatusPanel({
   run,
   status,
   errorMessage,
+  autoReviewReasons,
 }: {
   run: Run;
   status: IngestionStatus;
   errorMessage?: string;
+  autoReviewReasons?: string[];
 }) {
   if (status === "uploaded") {
     return (
@@ -214,8 +225,8 @@ function StatusPanel({
               <p className="text-sm font-medium">Ready to parse</p>
             </div>
             <p className="text-muted-foreground text-sm">
-              Detected as <span className="font-medium">{run.source_type}</span>. Parse to preview
-              the data before committing.
+              Detected as <span className="font-medium">{run.source_type}</span>. Parsing will
+              auto-commit clean runs.
             </p>
           </div>
           <ParseButton run={run} />
@@ -245,8 +256,17 @@ function StatusPanel({
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-violet-500" />
-              <p className="text-sm font-medium">Preview ready — review before committing</p>
+              <p className="text-sm font-medium">
+                {autoReviewReasons?.length ? "Auto-commit paused for review" : "Preview ready"}
+              </p>
             </div>
+            {autoReviewReasons?.length ? (
+              <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
+                {autoReviewReasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            ) : null}
             {run.rows_to_insert != null && (
               <p className="text-muted-foreground text-sm">
                 {run.rows_to_insert.toLocaleString()} new rows will be written

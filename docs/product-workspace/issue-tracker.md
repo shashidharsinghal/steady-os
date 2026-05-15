@@ -1,0 +1,57 @@
+# Issue Tracker
+
+Use this as a Notion database with properties: `Issue`, `Area`, `Severity`, `Status`, `Owner`, `Reported`, `Source`, `Steps / Evidence`, `Expected`, `Next Action`.
+
+## Status Legend
+
+| Status       | Meaning                          |
+| ------------ | -------------------------------- |
+| Open         | Needs triage or implementation   |
+| In Progress  | Being worked on                  |
+| Ready for QA | Fix exists, needs partner review |
+| Closed       | Verified as fixed                |
+| Deferred     | Valid, not in current release    |
+
+## Active / Recent Issues
+
+| Issue                                                                    | Area                      | Severity | Status       | Source                    | Evidence / Context                                                                                         | Expected                                                                                                               | Next Action                                                        |
+| ------------------------------------------------------------------------ | ------------------------- | -------- | ------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Gmail scanned bills show amount as `₹0`                                  | Expenses, Gmail ingestion | High     | Open         | Partner screenshot        | Pending bills list shows HDFC, rent, Airtel, and other scanned bills with `₹0` despite invoice-like emails | Amount should extract from attachment or email body, or show `Needs review: amount missing` instead of misleading zero | Add extraction diagnostics and fallback display for unknown amount |
+| Gas and rent invoices not fetched reliably                               | Gmail ingestion           | High     | Open         | Partner report            | User expected gas/rent invoices to appear from Gmail auto-sync                                             | Gmail should detect configured invoice subjects/senders and attachments, including LPG/rent/CAM categories             | Review Gmail query/filter rules and doctype classification         |
+| Manual upload document type menu still shows gas/rent/CAM as coming soon | Ingest UX                 | Medium   | Open         | Partner screenshot        | Dropdown greys out Gas bill, Rent invoice, CAM/maintenance even after invoice scanning work                | If scanning is supported, manual upload should allow those document types or hide them until upload support exists     | Decide whether to enable manual bill upload or label as Gmail-only |
+| Sales module failed to load daily sales                                  | Sales analytics           | High     | Ready for QA | Partner screenshot        | Error in `app/(app)/sales/_lib/sales.ts` around daily summary query                                        | Sales page should load with empty states instead of throwing when data/schema is absent                                | Verify after recent schema/query fixes                             |
+| Dashboard trend bars need visible sales and order numbers                | Dashboard                 | Medium   | Ready for QA | Partner screenshot        | User requested numbers on top of bars for sales and orders                                                 | Bars should display readable values without overlap on desktop and mobile                                              | QA chart labels across 7d/30d/90d                                  |
+| Ingest should auto-commit after ingestion                                | Ingest UX                 | High     | Ready for QA | Partner request           | User does not want manual "Commit to database" for every report, only delete/reject if issue found         | Successful parse should commit automatically where confidence is sufficient                                            | Verify manual and Gmail flows                                      |
+| Gmail backfill unavailable when Gmail is connected                       | Ingest UX, Gmail          | High     | Ready for QA | Partner report            | Backfill should be available after auto-connect                                                            | Connected Gmail should allow date/day backfill from UI                                                                 | QA admin integrations and ingest page                              |
+| `pdf-parse` / `pdfjs-dist` server action crash                           | Gmail/PDF parsing         | High     | Ready for QA | Dev server stack trace    | Import path caused server action bundling/runtime failure                                                  | PDF extraction should work in server context without crashing page actions                                             | Re-test backfill with PDF attachments                              |
+| `public.expenses` missing in schema cache during Gmail ingestion         | Supabase schema           | Critical | Closed       | Dev server stack trace    | Gmail sync tried to insert/select expenses before migration applied                                        | `expenses` table and related enums/categories must exist before ingestion                                              | Migration applied, keep production schema in sync                  |
+| Expense categories load failure                                          | Expenses                  | Critical | Closed       | Partner screenshot        | `/expenses` threw "Failed to load expense categories"                                                      | Page should load categories or seed defaults                                                                           | Confirmed through migration/category path                          |
+| Root domain `steady-os.in` invalid configuration                         | Vercel/DNS                | Medium   | Open         | Vercel domains screenshot | `www.steady-os.in` valid/prod, root showed invalid configuration/307 to www                                | Root domain should redirect or resolve cleanly                                                                         | Fix DNS apex records in domain provider/Vercel                     |
+| Production env URL mismatch risk                                         | Deployment                | High     | Ready for QA | Deployment work           | Vercel env used app URL and Gmail callback domain                                                          | OAuth callback and Supabase auth URLs must match production domain                                                     | Final prod smoke test after custom domain settles                  |
+| Need collapsible left sidebar to icon-only                               | Platform UX               | Medium   | Open         | Partner request           | User asked sales module fix plus sidebar collapse option                                                   | Sidebar should support expanded/collapsed with persisted preference                                                    | Implement or verify if already present                             |
+| Zomato parser unavailable                                                | Sales ingestion           | Medium   | Deferred     | Spec                      | Parser is intentionally a stub until sample file exists                                                    | Should return clear sample-needed message, not crash                                                                   | Collect real Zomato annexure                                       |
+| Petpooja API auto-ingest unavailable                                     | Data automation           | Medium   | Deferred     | v2.1 plan                 | API access unavailable                                                                                     | Continue Gmail/manual file ingestion until API access lands                                                            | Revisit when API contract arrives                                  |
+
+## Bug Intake Template
+
+```md
+## Title
+
+## Area
+
+## Severity
+
+Critical / High / Medium / Low
+
+## What happened
+
+## Expected behavior
+
+## Screenshot / logs
+
+## Data source
+
+Manual upload / Gmail / dashboard / Supabase / Vercel / other
+
+## Next action
+```

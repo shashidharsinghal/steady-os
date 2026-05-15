@@ -32,7 +32,7 @@ export function ParseButton({ run, sourceOverride }: { run: Run; sourceOverride?
     startTransition(async () => {
       try {
         await parseRun(run.id, sourceOverride ?? undefined);
-        toast.success("Parsing complete.");
+        toast.success("Ingestion complete.");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Parsing failed.");
       }
